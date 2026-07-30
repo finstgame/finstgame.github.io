@@ -1,0 +1,1905 @@
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>フィンスト — Phase 2</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Dela+Gothic+One&family=Zen+Kaku+Gothic+New:wght@400;700;900&display=swap" rel="stylesheet">
+
+<style>
+  :root{
+    --ink:#0D1522;
+    --panel:#16223A;
+    --panel-hi:#1E2E4C;
+    --bone:#F5F0E6;
+    --dim:#66799A;
+    --p0:#33D9BE;
+    --p1:#FF5F7E;
+    --wood:#E3B778;
+    --stick-w: clamp(9px, 2.6vw, 14px);
+    --stick-h: clamp(46px, 12vw, 74px);
+    --r: 14px;
+  }
+
+  *{box-sizing:border-box; margin:0; padding:0; -webkit-tap-highlight-color:transparent;}
+
+  body{
+    background:
+      radial-gradient(120% 80% at 50% 0%, #17253E 0%, transparent 60%),
+      radial-gradient(120% 80% at 50% 100%, #17253E 0%, transparent 60%),
+      var(--ink);
+    color:var(--bone);
+    font-family:"Zen Kaku Gothic New", system-ui, sans-serif;
+    min-height:100vh;
+    display:flex;
+    justify-content:center;
+    padding:12px;
+  }
+
+  .app{
+    width:100%;
+    max-width:460px;
+    display:flex;
+    flex-direction:column;
+    gap:10px;
+    padding-bottom:var(--sheet-pad, 0px);
+  }
+
+  /* ---------- header ---------- */
+  .top{
+    display:flex;
+    align-items:baseline;
+    justify-content:space-between;
+    padding:2px 4px;
+  }
+  .brand{
+    font-family:"Dela Gothic One", sans-serif;
+    font-size:clamp(20px, 6vw, 26px);
+    letter-spacing:.04em;
+  }
+  .brand .dot{color:var(--wood);}
+  .phase-tag{
+    font-size:11px;
+    color:var(--dim);
+    letter-spacing:.14em;
+  }
+
+  /* ---------- player board ---------- */
+  .board{
+    background:var(--panel);
+    border-radius:var(--r);
+    padding:14px 14px 16px;
+    border:2px solid transparent;
+    transition:border-color .25s, background .25s;
+    position:relative;
+  }
+  .board[data-active="true"]{
+    border-color:var(--c);
+    background:var(--panel-hi);
+  }
+  .board[data-dead="true"]{opacity:.5;}
+
+  .board-head{
+    display:flex;
+    align-items:center;
+    gap:8px;
+    margin-bottom:12px;
+  }
+  .pip{
+    width:10px; height:10px; border-radius:50%;
+    background:var(--c);
+    box-shadow:0 0 0 0 var(--c);
+  }
+  .board[data-active="true"] .pip{animation:pulse 1.8s infinite;}
+  @keyframes pulse{
+    0%{box-shadow:0 0 0 0 color-mix(in srgb, var(--c) 60%, transparent);}
+    70%{box-shadow:0 0 0 9px transparent;}
+    100%{box-shadow:0 0 0 0 transparent;}
+  }
+  .pname{font-weight:900; font-size:14px; letter-spacing:.08em;}
+  .ptag{
+    margin-left:auto;
+    font-size:11px;
+    color:var(--dim);
+    letter-spacing:.1em;
+  }
+  /* 拡張したプレイヤーの印 */
+  .exp{
+    font-size:10px;
+    font-weight:700;
+    letter-spacing:.08em;
+    color:#0D1522;
+    background:var(--wood);
+    border-radius:5px;
+    padding:2px 6px;
+  }
+
+  .hands{display:flex; gap:10px;}
+
+  .hand{
+    flex:1;
+    background:#0F1A2C;
+    border:2px solid #22314E;
+    border-radius:12px;
+    padding:10px 6px 8px;
+    display:flex;
+    flex-direction:column;
+    align-items:center;
+    gap:8px;
+    cursor:pointer;
+    position:relative;
+    transition:transform .18s cubic-bezier(.34,1.56,.64,1), border-color .18s, box-shadow .18s;
+  }
+  .hand:focus-visible{outline:3px solid var(--wood); outline-offset:2px;}
+  .hand[data-out="true"]{cursor:default; border-style:dashed; border-color:#2A3550;}
+  .hand.selectable:hover{border-color:var(--c);}
+  .hand.selected{
+    transform:translateY(-8px);
+    border-color:var(--c);
+    box-shadow:0 8px 0 -2px color-mix(in srgb, var(--c) 35%, transparent);
+  }
+  .hand.target{
+    border-color:var(--wood);
+    animation:beckon 1s ease-in-out infinite;
+  }
+  @keyframes beckon{
+    0%,100%{transform:translateY(0);}
+    50%{transform:translateY(-4px);}
+  }
+
+  .sticks{
+    display:flex;
+    gap:5px;
+    align-items:flex-end;
+    height:var(--stick-h);
+  }
+  .stick{
+    width:var(--stick-w);
+    height:var(--stick-h);
+    border-radius:calc(var(--stick-w)/2);
+    background:linear-gradient(180deg, var(--c) 0%, color-mix(in srgb, var(--c) 62%, #0A1220) 100%);
+    box-shadow:inset 0 -3px 0 color-mix(in srgb, #000 22%, transparent);
+    transform-origin:bottom center;
+    animation:raise .32s cubic-bezier(.34,1.56,.64,1) backwards;
+    animation-delay:calc(var(--i) * 45ms);
+  }
+  @keyframes raise{
+    from{transform:scaleY(.1) translateY(6px); opacity:0;}
+    to{transform:scaleY(1) translateY(0); opacity:1;}
+  }
+  .stick.ghost{
+    background:none;
+    border:1.5px dashed #2A3550;
+    box-shadow:none;
+    animation:none;
+  }
+  /* 拡張で増えた5本目のスロット */
+  .stick.ghost.bonus{border-color:color-mix(in srgb, var(--wood) 45%, transparent);}
+  .stick.broken{
+    animation:snap .5s ease-in forwards;
+  }
+  @keyframes snap{
+    0%{transform:rotate(0) translateY(0); opacity:1;}
+    30%{transform:rotate(-14deg) translateY(-6px);}
+    100%{transform:rotate(70deg) translateY(40px); opacity:0;}
+  }
+
+  .count{
+    font-family:"Dela Gothic One", sans-serif;
+    font-size:22px;
+    line-height:1;
+    color:var(--c);
+  }
+  .hand[data-out="true"] .count{color:#3B4A69; font-size:14px; padding:4px 0;}
+
+  /* lunge */
+  .hand.lunge-down{animation:lungeDown .34s ease-in-out;}
+  .hand.lunge-up{animation:lungeUp .34s ease-in-out;}
+  @keyframes lungeDown{
+    0%{transform:translateY(-8px);} 45%{transform:translateY(26px) scale(1.05);} 100%{transform:translateY(0);}
+  }
+  @keyframes lungeUp{
+    0%{transform:translateY(-8px);} 45%{transform:translateY(-34px) scale(1.05);} 100%{transform:translateY(0);}
+  }
+  .hand.hit{animation:shake .38s;}
+  @keyframes shake{
+    0%,100%{transform:translateX(0);}
+    20%{transform:translateX(-7px);} 40%{transform:translateX(6px);}
+    60%{transform:translateX(-4px);} 80%{transform:translateX(3px);}
+  }
+  .flash{
+    position:absolute; inset:0; border-radius:12px;
+    background:var(--wood); opacity:0; pointer-events:none;
+  }
+  .flash.go{animation:flash .38s ease-out;}
+  .flash.heal{background:var(--p0);}
+  @keyframes flash{from{opacity:.75;} to{opacity:0;}}
+
+  .dmg{
+    position:absolute;
+    left:50%; top:6px;
+    transform:translateX(-50%);
+    font-family:"Dela Gothic One", sans-serif;
+    font-size:28px;
+    color:var(--wood);
+    text-shadow:0 2px 0 #0D1522;
+    pointer-events:none;
+    animation:pop .85s ease-out forwards;
+    white-space:nowrap;
+  }
+  .dmg.up{color:var(--p0);}
+  .dmg.nul{color:var(--dim); font-size:19px;}
+  @keyframes pop{
+    0%{opacity:0; transform:translate(-50%, 8px) scale(.6);}
+    25%{opacity:1; transform:translate(-50%, -6px) scale(1.15);}
+    100%{opacity:0; transform:translate(-50%, -34px) scale(1);}
+  }
+
+  /* ---------- 手札 ---------- */
+  .hand-row{
+    display:flex;
+    gap:7px;
+    margin-top:12px;
+    align-items:stretch;
+  }
+  .hand-row[data-empty="true"]{
+    font-size:11px;
+    color:var(--dim);
+    letter-spacing:.1em;
+    padding:6px 2px 0;
+  }
+
+  .card{
+    flex:1 1 0;
+    min-width:0;
+    background:#0F1A2C;
+    border:2px solid #22314E;
+    border-radius:10px;
+    padding:8px 7px;
+    display:flex;
+    flex-direction:column;
+    gap:3px;
+    text-align:left;
+    cursor:pointer;
+    position:relative;
+    overflow:hidden;
+    transition:transform .16s cubic-bezier(.34,1.56,.64,1), border-color .16s, box-shadow .16s, opacity .2s;
+    animation:deal .34s cubic-bezier(.34,1.56,.64,1) backwards;
+    animation-delay:calc(var(--i) * 70ms);
+  }
+  @keyframes deal{
+    from{opacity:0; transform:translateY(14px) rotate(-4deg);}
+    to{opacity:1; transform:none;}
+  }
+  .card:focus-visible{outline:3px solid var(--wood); outline-offset:2px;}
+  .card:hover:not(:disabled){border-color:var(--wood);}
+  .card.picked{
+    transform:translateY(-7px);
+    border-color:var(--wood);
+    box-shadow:0 7px 0 -2px color-mix(in srgb, var(--wood) 32%, transparent);
+  }
+  .card:disabled{cursor:default; opacity:.42;}
+  .card .cnum{
+    font-family:"Dela Gothic One", sans-serif;
+    font-size:10px;
+    color:var(--dim);
+    letter-spacing:.08em;
+  }
+  .card .cname{
+    /* 隕・喚・倍返指などは Dela Gothic One に字が無く合成太字になるため本文書体の900で組む */
+    font-weight:900;
+    font-size:clamp(11.5px, 3.3vw, 13.5px);
+    line-height:1.2;
+    letter-spacing:.02em;
+    word-break:keep-all;          /* 320px で「カウンター」が語中改行するのを防ぐ */
+    color:var(--bone);
+  }
+  .card .ctiming{
+    font-size:9.5px;
+    letter-spacing:.06em;
+    color:var(--dim);
+    margin-top:auto;
+  }
+  .card[data-timing="defense"] .ctiming{color:var(--wood);}
+
+  /* 使用時に割り箸のように折れて消える */
+  .card.spent{animation:spend .42s ease-in forwards;}
+  @keyframes spend{
+    0%{transform:translateY(-7px) rotate(0); opacity:1;}
+    30%{transform:translateY(-12px) rotate(-6deg);}
+    100%{transform:translateY(46px) rotate(24deg); opacity:0;}
+  }
+
+  /* 相手の手札は裏向き（online 版で見えない情報を先取り） */
+  .card.back{
+    flex:0 0 34px;
+    background:
+      repeating-linear-gradient(135deg,
+        color-mix(in srgb, var(--wood) 22%, #0F1A2C) 0 6px,
+        #0F1A2C 6px 12px);
+    border-color:color-mix(in srgb, var(--wood) 30%, #22314E);
+    cursor:default;
+    align-items:center;
+    justify-content:center;
+    padding:0;
+    height:44px;
+  }
+  .card.back::after{
+    content:"";
+    width:14px; height:14px;
+    border-left:2px solid color-mix(in srgb, var(--wood) 55%, transparent);
+    border-right:2px solid color-mix(in srgb, var(--wood) 55%, transparent);
+    transform:rotate(20deg) skewX(-20deg);
+  }
+  .back-count{
+    align-self:center;
+    font-size:11px;
+    color:var(--dim);
+    letter-spacing:.1em;
+    margin-left:4px;
+  }
+
+  /* ---------- centre: crossed chopsticks turn indicator ---------- */
+  .mid{
+    display:flex;
+    align-items:center;
+    gap:12px;
+    padding:2px 6px;
+  }
+  .cross{
+    flex:none;
+    width:46px; height:46px;
+    transition:transform .45s cubic-bezier(.34,1.56,.64,1);
+  }
+  .cross rect{transition:fill .3s;}
+  .log{
+    flex:1;
+    font-size:13px;
+    line-height:1.45;
+    color:var(--bone);
+    min-height:2.9em;
+  }
+  .log b{color:var(--turn-c);}
+  .log .sub{display:block; color:var(--dim); font-size:11.5px; letter-spacing:.04em;}
+
+  /* ---------- actions ---------- */
+  .bar{display:flex; gap:8px;}
+  button{
+    font-family:inherit;
+    font-weight:700;
+    font-size:14px;
+    color:var(--bone);
+    background:var(--panel);
+    border:2px solid #22314E;
+    border-radius:11px;
+    padding:13px 14px;
+    cursor:pointer;
+    flex:1;
+    transition:transform .12s, background .18s, border-color .18s;
+  }
+  button:hover:not(:disabled){background:var(--panel-hi); border-color:var(--turn-c);}
+  button:active:not(:disabled){transform:translateY(2px);}
+  button:disabled{opacity:.35; cursor:default;}
+  button:focus-visible{outline:3px solid var(--wood); outline-offset:2px;}
+  button.primary{background:var(--turn-c); color:#0D1522; border-color:var(--turn-c);}
+  button.ghost{flex:0 0 auto; padding:13px 16px; color:var(--dim);}
+
+  /* panels */
+  .panel{
+    background:var(--panel);
+    border:2px solid var(--turn-c);
+    border-radius:var(--r);
+    padding:12px;
+    display:none;
+    flex-direction:column;
+    gap:10px;
+  }
+  .panel.open{display:flex; animation:slideIn .25s ease-out;}
+  @keyframes slideIn{from{opacity:0; transform:translateY(8px);} to{opacity:1; transform:none;}}
+  .panel h3{font-size:12px; letter-spacing:.12em; color:var(--dim); font-weight:700;}
+  .opts{display:flex; flex-wrap:wrap; gap:8px;}
+  .opt{
+    flex:0 0 auto;
+    font-family:"Dela Gothic One", sans-serif;
+    font-size:17px;
+    padding:10px 15px;
+    background:#0F1A2C;
+    border:2px solid #22314E;
+    border-radius:10px;
+    line-height:1.15;
+  }
+  .opt small{
+    display:block;
+    font-family:"Zen Kaku Gothic New", sans-serif;
+    font-size:10px;
+    font-weight:700;
+    color:var(--dim);
+    letter-spacing:.04em;
+    margin-top:3px;
+  }
+  .opt.kill{border-color:var(--wood);}
+  .opt.kill small{color:var(--wood);}
+
+  #card.panel{border-color:var(--wood);}
+  .card-detail{display:flex; flex-direction:column; gap:5px;}
+  .card-detail .dname{
+    font-weight:900;
+    font-size:19px;
+    letter-spacing:.02em;
+    color:var(--wood);
+  }
+  .card-detail .dtext{font-size:13px; line-height:1.5;}
+  .card-detail .dnote{font-size:11.5px; line-height:1.5; color:var(--dim);}
+  .card-row{display:flex; gap:8px;}
+  .card-row .primary{background:var(--wood); color:#0D1522; border-color:var(--wood);}
+
+  /* ステップ中の指示バー */
+  .step-bar{
+    display:none;
+    align-items:center;
+    gap:10px;
+    background:color-mix(in srgb, var(--wood) 14%, var(--panel));
+    border:2px solid var(--wood);
+    border-radius:var(--r);
+    padding:11px 12px;
+    font-size:13px;
+    line-height:1.4;
+  }
+  .step-bar.open{display:flex; animation:slideIn .2s ease-out;}
+  .step-bar .sname{font-weight:900; color:var(--wood);}
+  .step-bar button{flex:0 0 auto; padding:8px 12px; font-size:12px; color:var(--dim);}
+
+  /* ---------- 応答フェーズ（防御割り込み） ---------- */
+  .sheet{
+    position:fixed;
+    left:0; right:0; bottom:0;
+    z-index:20;
+    display:none;
+    justify-content:center;
+    padding:10px 12px calc(12px + env(safe-area-inset-bottom));
+    background:linear-gradient(180deg, transparent 0%, rgba(8,13,22,.86) 22%);
+  }
+  .sheet.open{display:flex; animation:rise .28s cubic-bezier(.34,1.56,.64,1);}
+  @keyframes rise{from{opacity:0; transform:translateY(24px);} to{opacity:1; transform:none;}}
+  .sheet-inner{
+    width:100%;
+    max-width:436px;
+    background:var(--panel-hi);
+    border:2px solid var(--wood);
+    border-radius:var(--r);
+    padding:12px;
+    display:flex;
+    flex-direction:column;
+    gap:10px;
+    box-shadow:0 -10px 40px rgba(8,13,22,.7);
+  }
+  .sheet-head{display:flex; align-items:baseline; gap:8px;}
+  .sheet-head .who{font-weight:900; font-size:14px; color:var(--resp-c);}
+  .sheet-head .secs{
+    margin-left:auto;
+    font-family:"Dela Gothic One", sans-serif;
+    font-size:20px;
+    color:var(--wood);
+  }
+  .sheet-head .secs.low{color:var(--p1);}
+  .sheet-msg{font-size:13px; line-height:1.45;}
+  .sheet-msg b{color:var(--wood);}
+
+  /* 残り時間を割り箸が短くなる形で見せる（§6 の新規演出） */
+  .timer{
+    height:11px;
+    background:#0F1A2C;
+    border:1.5px solid #22314E;
+    border-radius:6px;
+    overflow:hidden;
+  }
+  .timer-stick{
+    height:100%;
+    width:100%;
+    border-radius:5px;
+    background:linear-gradient(90deg,
+      color-mix(in srgb, var(--wood) 55%, #0A1220) 0%,
+      var(--wood) 100%);
+    box-shadow:inset 0 -3px 0 color-mix(in srgb, #000 22%, transparent);
+  }
+  .timer-stick.low{
+    background:linear-gradient(90deg,
+      color-mix(in srgb, var(--p1) 55%, #0A1220) 0%,
+      var(--p1) 100%);
+  }
+  /* 応答は判断のための操作なので、横に詰めず2列でタップ領域を大きく取る */
+  .sheet .hand-row{
+    margin-top:0;
+    display:grid;
+    grid-template-columns:repeat(2, minmax(0,1fr));
+    gap:7px;
+  }
+  .sheet .card{animation:none; padding:9px 10px;}
+  .sheet .card .cname{font-size:14px;}
+
+  /* winner */
+  .win{
+    position:fixed; inset:0;
+    background:rgba(8,13,22,.9);
+    display:none;
+    align-items:center;
+    justify-content:center;
+    flex-direction:column;
+    gap:18px;
+    padding:24px;
+    z-index:30;
+  }
+  .win.open{display:flex; animation:flash-in .4s ease-out;}
+  @keyframes flash-in{from{opacity:0;} to{opacity:1;}}
+  .win h2{
+    font-family:"Dela Gothic One", sans-serif;
+    font-size:clamp(30px, 11vw, 46px);
+    color:var(--turn-c);
+    text-align:center;
+    line-height:1.25;
+  }
+  .win .why{font-size:13px; color:var(--dim); text-align:center; line-height:1.5;}
+  .win button{max-width:260px;}
+
+  /* ---------- ロビー（Phase 3） ---------- */
+  .lobby{
+    position:fixed; inset:0;
+    background:
+      radial-gradient(120% 80% at 50% 0%, #17253E 0%, transparent 60%),
+      var(--ink);
+    display:none;
+    align-items:center;
+    justify-content:center;
+    padding:24px;
+    z-index:40;
+  }
+  .lobby.open{display:flex;}
+
+  /* 盤面の上下は「自分が下」。オンラインでは席によって入れ替える */
+  .app > .top{order:0;}
+  .app > .waiting-bar{order:1;}
+  .app > .board{order:2;}
+  .app > .mid{order:3;}
+  .app > .step-bar{order:6;}
+  .app > .panel{order:7;}
+  .app > .bar{order:8;}
+  .lobby-inner{width:100%; max-width:380px; display:flex; flex-direction:column; gap:14px;}
+  .lobby .brand{font-size:clamp(30px, 9vw, 40px); text-align:center;}
+  .lobby .tag{
+    text-align:center; font-size:11.5px; color:var(--dim);
+    letter-spacing:.14em; margin-top:-8px;
+  }
+  .lobby h3{font-size:11px; letter-spacing:.14em; color:var(--dim); font-weight:700; margin-top:6px;}
+  .lobby button{width:100%;}
+  .lobby .primary{background:var(--wood); color:#0D1522; border-color:var(--wood);}
+  .join-row{display:flex; gap:8px;}
+  .join-row input{
+    flex:1; min-width:0;
+    font-family:"Dela Gothic One", sans-serif;
+    font-size:20px;
+    letter-spacing:.22em;
+    text-align:center;
+    text-transform:uppercase;
+    color:var(--bone);
+    background:#0F1A2C;
+    border:2px solid #22314E;
+    border-radius:11px;
+    padding:12px 8px;
+  }
+  .join-row input:focus{outline:3px solid var(--wood); outline-offset:2px;}
+  .join-row button{flex:0 0 auto; width:auto;}
+  .lobby-note{font-size:11.5px; line-height:1.6; color:var(--dim);}
+  .lobby-err{font-size:12.5px; line-height:1.5; color:var(--p1); min-height:1.2em;}
+
+  /* 合流待ち：ルームコードを大きく出す */
+  .code-box{
+    background:var(--panel);
+    border:2px dashed var(--wood);
+    border-radius:var(--r);
+    padding:18px 14px;
+    text-align:center;
+  }
+  .code-box .code{
+    font-family:"Dela Gothic One", sans-serif;
+    font-size:clamp(34px, 12vw, 46px);
+    letter-spacing:.18em;
+    color:var(--wood);
+    line-height:1.1;
+  }
+  .code-box .lead{font-size:12px; color:var(--dim); letter-spacing:.1em; margin-bottom:6px;}
+  .dots::after{content:""; animation:dots 1.4s steps(4,end) infinite;}
+  @keyframes dots{0%{content:"";}25%{content:"・";}50%{content:"・・";}75%{content:"・・・";}}
+
+  /* 接続状態 */
+  .net-tag{
+    font-size:10px; letter-spacing:.1em; color:var(--dim);
+    display:flex; align-items:center; gap:5px;
+  }
+  .net-tag::before{
+    content:""; width:7px; height:7px; border-radius:50%;
+    background:var(--dim);
+  }
+  .net-tag[data-on="true"]::before{background:var(--p0);}
+  .net-tag[data-on="false"]::before{background:var(--p1);}
+
+  /* 相手の番＝自分は操作できない、を明示する */
+  .board[data-mine="true"] .pname::after{
+    content:"（あなた）";
+    font-size:10px; font-weight:700; color:var(--dim); letter-spacing:.04em;
+  }
+  .waiting-bar{
+    display:none;
+    align-items:center; gap:8px;
+    font-size:12.5px; color:var(--dim);
+    background:var(--panel);
+    border:2px solid #22314E;
+    border-radius:var(--r);
+    padding:12px;
+  }
+  .waiting-bar.open{display:flex;}
+
+  @media (prefers-reduced-motion: reduce){
+    *{animation-duration:.01ms !important; animation-iteration-count:1 !important; transition-duration:.01ms !important;}
+    .dots::after{animation:none; content:"・・・";}
+  }
+</style>
+
+<div class="app">
+  <div class="top">
+    <div class="brand">フィンスト<span class="dot">.</span></div>
+    <div class="net-tag" id="netTag"></div>
+  </div>
+
+  <div class="waiting-bar" id="waitBar"></div>
+
+  <div class="board" id="board1"></div>
+
+  <div class="mid" id="mid">
+    <svg class="cross" id="cross" viewBox="0 0 100 100" aria-hidden="true">
+      <rect x="44" y="8" width="12" height="84" rx="6" transform="rotate(20 50 50)"/>
+      <rect x="44" y="8" width="12" height="84" rx="6" transform="rotate(-20 50 50)"/>
+    </svg>
+    <div class="log" id="log" role="status" aria-live="polite"></div>
+  </div>
+
+  <div class="board" id="board0"></div>
+
+  <div class="step-bar" id="stepBar">
+    <div id="stepText"></div>
+    <button onclick="cancelStep()">やめる</button>
+  </div>
+
+  <div class="panel" id="split">
+    <h3>分けかたを選ぶ</h3>
+    <div class="opts" id="opts"></div>
+    <button class="ghost" onclick="closeSplit()">やめる</button>
+  </div>
+
+  <div class="panel" id="num">
+    <h3 id="numTitle">数を選ぶ</h3>
+    <div class="opts" id="numOpts"></div>
+    <button class="ghost" onclick="cancelStep()">やめる</button>
+  </div>
+
+  <div class="panel" id="card">
+    <h3>能力カードを使う</h3>
+    <div class="card-detail" id="cardDetail"></div>
+    <div class="card-row">
+      <button class="primary" id="cardUse">使う</button>
+      <button class="ghost" onclick="closeCard()">やめる</button>
+    </div>
+  </div>
+
+  <div class="bar">
+    <button id="splitBtn" onclick="openSplit()">分配する</button>
+    <button class="ghost" id="resetBtn" onclick="restart()">最初から</button>
+  </div>
+</div>
+
+<!-- ロビー（部屋を作る / コードで参加 / 1台で遊ぶ） -->
+<div class="lobby open" id="lobby">
+  <div class="lobby-inner" id="lobbyInner"></div>
+</div>
+
+<!-- 応答フェーズ（防御割り込み） -->
+<div class="sheet" id="sheet">
+  <div class="sheet-inner">
+    <div class="sheet-head">
+      <span class="who" id="sheetWho"></span>
+      <span class="secs" id="sheetSecs" role="timer" aria-live="off"></span>
+    </div>
+    <div class="timer"><div class="timer-stick" id="timerStick"></div></div>
+    <div class="sheet-msg" id="sheetMsg"></div>
+    <div id="sheetBody"></div>
+  </div>
+</div>
+
+<div class="win" id="win">
+  <h2 id="winText"></h2>
+  <div class="why" id="winWhy"></div>
+  <button class="primary" onclick="restart()">もう一戦</button>
+</div>
+
+<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2.58.0/dist/umd/supabase.min.js"></script>
+<script>
+/* =========================================================
+   フィンスト Phase 2（2a 〜 2d）
+   Phase 1（素の割り箸ゲーム）の状態管理・演出を継承。
+   2a カード基盤 / 2b 自ターンカード / 2c 攻撃カード＋拡張 / 2d 防御割り込み
+   ========================================================= */
+
+const NAMES = ["プレイヤー1", "プレイヤー2"];
+const HAND_SIZE = 3;
+const RESPONSE_MS = 15000;          // §4 応答フェーズの制限時間
+
+/* --- カード定義（§3 の一覧）--------------------------------
+   timing: self（自ターン）/ attack（自ターン・カード自体が攻撃）/ defense（防御割り込み）
+   need  : 使用時に追加入力が要るか（null / "ownHand" / "enemyHand" / "number"）
+---------------------------------------------------------- */
+const CARDS = {
+  1:  {name:"反転",     timing:"self",    text:"相手と指の本数を入れ替える。拡張状態は本人に残る"},
+  2:  {name:"シールド", timing:"defense", text:"受けるダメージが1になる"},
+  3:  {name:"隕石",     timing:"self",    text:"相手の生きている手に好きな数字を足す。防御割り込みでは防げない"},
+  4:  {name:"召喚",     timing:"self",    text:"片方が0の時、そこに1本〜自分の上限までの好きな数字を生み出す"},
+  5:  {name:"拡張",     timing:"self",    text:"自分の保持上限が5本になり、法が6になる（永久）"},
+  6:  {name:"倍返指",   timing:"attack",  text:"このカード自体が攻撃を実行する。ダメージ2倍"},
+  7:  {name:"カウンター",timing:"defense",text:"攻撃を無効化し、そのまま相手に返す。返す先の手は自分で選ぶ。重ねがけ可"},
+  8:  {name:"ダブル",   timing:"attack",  text:"このカード自体が攻撃を実行する。両手の合計を相手の片手に"},
+  9:  {name:"ヒール",   timing:"defense", text:"無効化した上で、任意の自分の手にダメージ分を追加（超過分は切り捨て／アウトの手も復活できる）"},
+  10: {name:"コピー",   timing:"self",    text:"自分の両手を相手と同じ本数にする。カードはコピーしない"},
+};
+const TIMING_LABEL = {self:"自ターン", attack:"攻撃", defense:"防御割り込み"};
+
+let S, busy = false, timerId = null;
+
+/* =========================================================
+   Phase 3 — オンライン対戦（Supabase Realtime）
+   仕様書 §5 のとおり、サーバー側の審判は置かず、行動したクライアントが
+   state 全体を書き込み、相手はそれを購読して適用する。
+   ========================================================= */
+const NET = {
+  url: "https://cxdooucxduldzvpyvnwt.supabase.co",
+  /* publishable キーはクライアントに埋め込む前提の公開鍵。secret キーは絶対に置かない */
+  key: "sb_publishable_OVBScuO-et_n0xCJmU7EGg_uGx13NWE"
+};
+/* 紛らわしい文字（I L O 0 1）を除いた6文字 */
+const CODE_ALPHABET = "ABCDEFGHJKMNPQRSTUVWXYZ23456789";
+/* 同期する項目。sel / pick / step は各自の手元の操作なので送らない */
+const SYNC = ["hands","max","mod","expanded","cards","used","turn","phase","pending","over","winner","why","msg","seq"];
+
+let sb = null;        // supabase client
+let online = false;
+let seat = 0;         // 自分の席（0 = 部屋を作った側 / 1 = 参加した側）
+let room = null;      // ルームコード
+let chan = null;      // realtime channel
+let myId = null;      // 匿名ID（リロードしても同じ席に戻るため）
+let applying = false; // 受信適用中は書き戻さない
+let watchdog = null;  // 応答側が落ちたときの保険
+
+function clientId(){
+  let v = null;
+  try{ v = localStorage.getItem("finst_id"); }catch(e){}
+  if(!v){
+    v = (crypto.randomUUID ? crypto.randomUUID()
+        : "xxxxxxxx-xxxx-4xxx-yxxx-xxxxxxxxxxxx".replace(/[xy]/g, c => {
+            const r = Math.random()*16|0; return (c === "x" ? r : (r&0x3|0x8)).toString(16); }));
+    try{ localStorage.setItem("finst_id", v); }catch(e){}
+  }
+  return v;
+}
+
+function newCode(){
+  let s = "";
+  for(let i=0;i<6;i++) s += CODE_ALPHABET[Math.floor(Math.random()*CODE_ALPHABET.length)];
+  return s;
+}
+
+/* 対戦の初期状態。部屋を作った側だけが作り、相手はこれを受け取る */
+function newState(){
+  return {
+    hands: [[1,1],[1,1]],
+    max:   [4,4],                        // 拡張で 5
+    mod:   [5,5],                        // 拡張で 6
+    expanded: [false,false],
+    cards: [deal(), deal()],
+    used:  [[],[]],
+    turn: Math.random() < 0.5 ? 0 : 1,   // 先攻はランダム
+    phase: "normal",                     // normal | defense | resolving | finished
+    pending: null,
+    over: false,
+    winner: null,
+    why: "",
+    msg: "",
+    seq: 0
+  };
+}
+
+function snapshot(){ const o = {}; SYNC.forEach(k => o[k] = S[k]); return o; }
+
+function openingMsg(){
+  return `<b>${NAMES[S.turn]}</b>の先攻ではじまります。<span class="sub">能力カードを3枚ずつ配りました。自分の手を選んで相手の手をタップ</span>`;
+}
+
+/* 状態が確定した所（手番交代・応答フェーズ開始・決着）で呼ぶ */
+function commit(){
+  if(!online || applying || !room || !sb) return;
+  S.seq = (S.seq || 0) + 1;
+  const snap = snapshot();
+  sb.from("matches")
+    .update({ state: snap,
+              deadline: S.pending && S.pending.deadline ? new Date(S.pending.deadline).toISOString() : null })
+    .eq("room_code", room)
+    .then(res => { if(res && res.error) netStatus(false, res.error.message); });
+}
+
+function applyRemote(snap){
+  if(!snap) return;
+  if(S && (snap.seq || 0) <= (S.seq || 0)) return;   // 自分の書き込みの反射・古い更新は捨てる
+  applying = true;
+  const before = JSON.parse(JSON.stringify(S.hands));
+  SYNC.forEach(k => S[k] = snap[k]);
+  S.sel = null; S.pick = null; S.step = null;
+  busy = false;
+  stopTimer(); clearTimeout(watchdog);
+  closeAllPanels();
+  render();
+  say(S.msg || openingMsg());
+  animateDiff(before);
+  if(S.over){ showWin(); }
+  else if(S.phase === "defense" && S.pending){
+    if(S.pending.responder === seat) openSheet();
+    else startWatchdog();
+  }
+  applying = false;
+}
+
+/* 受信側は途中経過を持たないので、手の増減から演出だけ再現する */
+function animateDiff(before){
+  [0,1].forEach(p => [0,1].forEach(h => {
+    const b = before[p][h], a = S.hands[p][h];
+    if(b === a) return;
+    const el = document.querySelector(`.hand[data-p="${p}"][data-h="${h}"]`);
+    if(!el) return;
+    if(a === 0){
+      el.querySelector(".flash").classList.add("go");
+      el.classList.add("hit");
+      el.querySelectorAll(".stick:not(.ghost)").forEach((s,i) => {
+        s.style.animationDelay = (i*40)+"ms"; s.classList.add("broken");
+      });
+    } else {
+      const f = el.querySelector(".flash");
+      if(a > b) f.classList.add("heal");
+      f.classList.add("go");
+    }
+  }));
+}
+
+/* 応答側の端末が落ちた場合に、攻撃側の端末が締切+3秒で肩代わりする */
+function startWatchdog(){
+  clearTimeout(watchdog);
+  const ms = Math.max(600, (S.pending.deadline - Date.now()) + 3000);
+  watchdog = setTimeout(() => {
+    if(online && S.phase === "defense" && S.pending && S.pending.responder !== seat) passDefense(true);
+  }, ms);
+}
+
+function netStatus(ok, why){
+  const el = document.getElementById("netTag");
+  if(!online){ el.textContent = "1台で対戦"; el.removeAttribute("data-on"); return; }
+  el.dataset.on = String(!!ok);
+  el.textContent = ok ? `オンライン ${room}` : `接続に問題 ${why ? "／" + why : ""}`;
+}
+
+async function connect(code){
+  room = code;
+  chan = sb.channel("finst:" + code)
+    .on("postgres_changes",
+        { event:"UPDATE", schema:"public", table:"matches", filter:"room_code=eq." + code },
+        payload => applyRemote(payload.new && payload.new.state))
+    .on("postgres_changes",
+        { event:"UPDATE", schema:"public", table:"rooms", filter:"code=eq." + code },
+        payload => { if(payload.new && payload.new.status === "playing") enterGame(); });
+  await chan.subscribe(st => netStatus(st === "SUBSCRIBED"));
+}
+
+async function createRoom(){
+  lobbyError("");
+  const code = newCode();
+  const st = newState();
+  const { error: e1 } = await sb.from("rooms").insert({ code, status:"waiting", host_id: myId });
+  if(e1) return lobbyError(explain(e1));
+  const { error: e2 } = await sb.from("matches").insert({ room_code: code, state: st });
+  if(e2) return lobbyError(explain(e2));
+
+  online = true; seat = 0;
+  S = Object.assign({}, st, {sel:null, pick:null, step:null});
+  await connect(code);
+  location.hash = code;
+  showLobby("waiting");
+}
+
+async function joinRoom(code){
+  lobbyError("");
+  code = (code || "").trim().toUpperCase();
+  if(code.length !== 6) return lobbyError("ルームコードは6文字です");
+
+  const { data: r, error: e1 } = await sb.from("rooms").select("*").eq("code", code).maybeSingle();
+  if(e1) return lobbyError(explain(e1));
+  if(!r)  return lobbyError("その部屋は見つかりません。コードを確認してください");
+
+  /* 同じ端末で開き直したときは、元の席に戻る */
+  let mySeat = r.host_id === myId ? 0 : r.guest_id === myId ? 1 : null;
+  if(mySeat === null){
+    if(r.guest_id) return lobbyError("その部屋はもう2人います");
+    const { error: e2 } = await sb.from("rooms")
+      .update({ guest_id: myId, status:"playing" }).eq("code", code).is("guest_id", null);
+    if(e2) return lobbyError(explain(e2));
+    mySeat = 1;
+  }
+
+  const { data: m, error: e3 } = await sb.from("matches").select("state").eq("room_code", code).maybeSingle();
+  if(e3) return lobbyError(explain(e3));
+  if(!m)  return lobbyError("対戦データが見つかりません");
+
+  online = true; seat = mySeat;
+  S = Object.assign({}, m.state, {sel:null, pick:null, step:null});
+  await connect(code);
+  location.hash = code;
+  enterGame();
+  /* 参加した側が入ったことを相手に知らせる（rooms の更新だけでは初期表示が動かないため） */
+  if(seat === 1) commit();
+}
+
+function explain(e){
+  const m = (e && e.message) || String(e);
+  if(/relation .* does not exist|schema cache/i.test(m))
+    return "テーブルがまだありません。Supabase の SQL Editor で schema.sql を実行してください";
+  if(/row-level security|permission denied/i.test(m))
+    return "RLS で弾かれました。schema.sql のポリシーが適用されているか確認してください";
+  return m;
+}
+
+function startOffline(){
+  online = false; seat = 0; room = null;
+  reset();
+  enterGame();
+}
+
+function enterGame(){
+  document.getElementById("lobby").classList.remove("open");
+  document.getElementById("waitBar").classList.remove("open");
+  netStatus(true);
+  busy = false;
+  render();
+  say(S.msg || openingMsg());
+  if(S.over) showWin();
+}
+
+/* ---- ロビーの画面 ---- */
+function showLobby(mode){
+  const el = document.getElementById("lobbyInner");
+  document.getElementById("lobby").classList.add("open");
+
+  if(mode === "waiting"){
+    el.innerHTML = `
+      <div class="brand">フィンスト<span class="dot">.</span></div>
+      <div class="tag">ともだちを待っています</div>
+      <div class="code-box">
+        <div class="lead">ルームコード</div>
+        <div class="code">${room}</div>
+      </div>
+      <button class="primary" id="shareBtn">リンクをコピーして送る</button>
+      <div class="lobby-note">相手がこのコードを入力するか、コピーしたリンクを開くと始まります。<span class="dots">待機中</span></div>
+      <button class="ghost" onclick="leaveRoom()">やめる</button>
+      <div class="lobby-err" id="lobbyErr"></div>`;
+    document.getElementById("shareBtn").onclick = shareLink;
+    return;
+  }
+
+  el.innerHTML = `
+    <div class="brand">フィンスト<span class="dot">.</span></div>
+    <div class="tag">割り箸ゲーム ＋ 能力カード</div>
+    <h3>オンラインで対戦する</h3>
+    <button class="primary" onclick="createRoom()">部屋を作る</button>
+    <div class="join-row">
+      <input id="codeInput" maxlength="6" placeholder="コード" autocapitalize="characters"
+             autocomplete="off" spellcheck="false" aria-label="ルームコード6文字">
+      <button onclick="joinRoom(document.getElementById('codeInput').value)">参加</button>
+    </div>
+    <div class="lobby-err" id="lobbyErr"></div>
+    <h3>ひとつの端末で遊ぶ</h3>
+    <button class="ghost" style="width:100%" onclick="startOffline()">1台を回して対戦</button>
+    <div class="lobby-note">オンラインは、相手の手札が見えません。1台版は交代で回して遊ぶ用です。</div>`;
+  const inp = document.getElementById("codeInput");
+  inp.addEventListener("keydown", e => { if(e.key === "Enter") joinRoom(inp.value); });
+}
+
+function lobbyError(msg){
+  const el = document.getElementById("lobbyErr");
+  if(el) el.textContent = msg || "";
+}
+
+async function shareLink(){
+  const url = location.origin + location.pathname + "#" + room;
+  const btn = document.getElementById("shareBtn");
+  try{
+    if(navigator.share){ await navigator.share({title:"フィンスト", text:"対戦しよう", url}); return; }
+    await navigator.clipboard.writeText(url);
+    btn.textContent = "コピーしました";
+    setTimeout(() => { btn.textContent = "リンクをコピーして送る"; }, 1800);
+  }catch(e){
+    btn.textContent = url;
+  }
+}
+
+function leaveRoom(){
+  if(chan) { try{ sb.removeChannel(chan); }catch(e){} chan = null; }
+  online = false; room = null;
+  location.hash = "";
+  showLobby();
+}
+
+function boot(){
+  myId = clientId();
+  if(!window.supabase || !NET.url || !NET.key){
+    showLobby();
+    lobbyError("オンライン機能を読み込めませんでした。1台版は遊べます");
+    return;
+  }
+  sb = window.supabase.createClient(NET.url, NET.key, { auth:{ persistSession:false } });
+  S = newState();                              // ロビー表示中の空打ち防止用
+  const code = (location.hash || "").replace("#","").trim().toUpperCase();
+  showLobby();
+  if(code.length === 6){
+    document.getElementById("codeInput").value = code;
+    joinRoom(code);
+  }
+}
+
+/* ---- 手番・応答の権利 ---- */
+const myTurn   = () => !online || S.turn === seat;
+const iRespond = () => !online || (S.pending && S.pending.responder === seat);
+
+function restart(){
+  if(online){
+    const st = newState();
+    Object.assign(S, st);
+    S.sel = null; S.pick = null; S.step = null;
+    S.msg = `新しい試合を配りました。<span class="sub">先攻は ${NAMES[S.turn]}</span>`;
+    busy = false;
+    document.getElementById("win").classList.remove("open");
+    closeAllPanels();
+    render();
+    say(S.msg);
+    commit();
+  } else {
+    reset();
+  }
+}
+
+function reset(){
+  S = Object.assign(newState(), {sel:null, pick:null, step:null});
+  busy = false;
+  stopTimer(); clearTimeout(watchdog);
+  document.getElementById("win").classList.remove("open");
+  closeAllPanels();
+  render();
+  say(openingMsg());
+}
+
+/* 10種からランダムに3枚。プレイヤーごとに独立して引くので両者が同じカードを持ちうる */
+function deal(){
+  const pool = Object.keys(CARDS).map(Number);
+  for(let i = pool.length - 1; i > 0; i--){
+    const j = Math.floor(Math.random() * (i + 1));
+    [pool[i], pool[j]] = [pool[j], pool[i]];
+  }
+  return pool.slice(0, HAND_SIZE).sort((a,b) => a - b);
+}
+
+const alive = (p,h) => S.hands[p][h] > 0;
+const dead  = p => S.hands[p][0] === 0 && S.hands[p][1] === 0;
+const col   = p => p === 0 ? "var(--p0)" : "var(--p1)";
+const hn    = h => h === 0 ? "左" : "右";
+const foe   = p => 1 - p;
+const wait  = ms => new Promise(r => setTimeout(r, ms));
+
+function say(html){ document.getElementById("log").innerHTML = html; }
+
+/* 受け取った本数は「受け取る側の法」で正規化する。
+   ちょうど法の倍数ならアウト、超えた分は繰り下がる（§2）。 */
+const norm = (v, p) => ((v % S.mod[p]) + S.mod[p]) % S.mod[p];
+
+/* ================= 描画 ================= */
+/* 自分の盤が下。オンラインでは席によって上下が入れ替わる */
+const bottomP = () => online ? seat : 0;
+
+function render(){
+  document.documentElement.style.setProperty("--turn-c", col(S.turn));
+  document.getElementById("cross").querySelectorAll("rect")
+    .forEach(r => r.setAttribute("fill", col(S.turn)));
+  document.getElementById("cross").style.transform =
+    S.turn === bottomP() ? "rotate(0deg)" : "rotate(180deg)";
+
+  const bot = bottomP();
+  document.getElementById("board" + foe(bot)).style.order = 2;
+  document.getElementById("board" + bot).style.order = 4;
+
+  [0,1].forEach(p => {
+    const el = document.getElementById("board"+p);
+    el.style.setProperty("--c", col(p));
+    el.dataset.active = String(S.turn === p && !S.over);
+    el.dataset.dead = String(dead(p));
+    el.dataset.mine = String(online && p === seat);
+    el.innerHTML = `
+      <div class="board-head">
+        <span class="pip"></span>
+        <span class="pname">${NAMES[p]}</span>
+        ${S.expanded[p] ? `<span class="exp">拡張 上限5 / 法6</span>` : ""}
+        <span class="ptag">${S.turn === p && !S.over ? "手番" : ""}</span>
+      </div>
+      <div class="hands">${[0,1].map(h => handHTML(p,h)).join("")}</div>
+      ${cardsHTML(p)}`;
+  });
+
+  document.querySelectorAll(".hand").forEach(el => {
+    el.onclick = () => tap(+el.dataset.p, +el.dataset.h);
+    el.onkeydown = e => { if(e.key === "Enter" || e.key === " "){ e.preventDefault(); tap(+el.dataset.p, +el.dataset.h); } };
+  });
+  document.querySelectorAll('.board .card[data-id]').forEach(el => {
+    el.onclick = () => pickCard(+el.dataset.id);
+  });
+
+  document.getElementById("splitBtn").disabled =
+    S.over || S.phase !== "normal" || !!S.step || !myTurn() || splitOptions().length === 0;
+  document.getElementById("resetBtn").textContent = online ? "もう一戦" : "最初から";
+
+  /* 相手の番のあいだは、待っていることを言葉で出す */
+  const wb = document.getElementById("waitBar");
+  if(online && !S.over && !myTurn() && S.phase === "normal"){
+    wb.classList.add("open");
+    wb.innerHTML = `<span class="dots">${NAMES[foe(seat)]}が考えています</span>`;
+  } else if(online && !S.over && S.phase === "defense" && !iRespond()){
+    wb.classList.add("open");
+    wb.innerHTML = `<span class="dots">${NAMES[foe(seat)]}の応答を待っています</span>`;
+  } else {
+    wb.classList.remove("open");
+  }
+}
+
+/* この手が今クリックできるか（通常攻撃の的か、カードの入力対象か） */
+function isTargetable(p,h){
+  if(S.over || busy || !alive(p,h)) return false;
+  if(S.step){
+    if(S.step.need === "ownHand")   return p === S.step.who;
+    if(S.step.need === "enemyHand") return p === foe(S.step.who);
+    return false;
+  }
+  if(S.phase !== "normal" || !myTurn()) return false;
+  return !!S.sel && p !== S.turn;
+}
+
+function handHTML(p,h){
+  const v = S.hands[p][h];
+  const out = v === 0;
+  const isMine = p === S.turn && myTurn() && !S.over && S.phase === "normal" && !S.step;
+  const selected = S.sel && S.sel[0] === p && S.sel[1] === h;
+  const target = isTargetable(p,h);
+  /* ヒールはアウトの手も選べるので、生存判定と別に扱う */
+  const healable = S.step && S.step.need === "ownHand" && S.step.healTarget && p === S.step.who;
+
+  let cls = "hand";
+  if(isMine && !out) cls += " selectable";
+  if(selected) cls += " selected";
+  if(target || healable) cls += " target";
+
+  const sticks = Array.from({length: S.max[p]}, (_,i) =>
+    `<div class="stick${i < v ? "" : " ghost"}${i >= 4 ? " bonus" : ""}" style="--i:${i}"></div>`).join("");
+
+  const clickable = (isMine && !out) || target || healable;
+  return `<div class="${cls}" data-p="${p}" data-h="${h}" data-out="${out}"
+            tabindex="${clickable ? 0 : -1}"
+            role="button" aria-label="${NAMES[p]}の${hn(h)}手 ${out?"アウト":v+"本"}">
+            <div class="flash"></div>
+            <div class="sticks">${sticks}</div>
+            <div class="count">${out ? "OUT" : v}</div>
+          </div>`;
+}
+
+/* 相手の手札は枚数だけ見せる（何を持っているかは隠す）。
+   オンラインでは「自分の席の手札」を常に表向きにする（応答フェーズで使うため）。 */
+function cardsHTML(p){
+  const hand = S.cards[p];
+  if(hand.length === 0){
+    return `<div class="hand-row" data-empty="true">手札なし — 素の割り箸ゲーム</div>`;
+  }
+
+  const faceUp = online ? p === seat : (p === S.turn && !S.over);
+  if(!faceUp){
+    return `<div class="hand-row" aria-label="${NAMES[p]}の手札 ${hand.length}枚">
+      ${hand.map(() => `<div class="card back" aria-hidden="true"></div>`).join("")}
+      <span class="back-count">手札 ${hand.length}</span>
+    </div>`;
+  }
+  return `<div class="hand-row">${hand.map((id,i) => cardBtnHTML(id, i, p)).join("")}</div>`;
+}
+
+function cardBtnHTML(id, i, p){
+  const c = CARDS[id];
+  const u = usable(id, p);
+  return `<button class="card${S.pick === id ? " picked" : ""}" data-id="${id}" data-timing="${c.timing}"
+            style="--i:${i}" ${u.ok ? "" : "disabled"}
+            aria-label="${c.name}：${c.text}${u.ok ? "" : "（今は使えません：" + u.why + "）"}">
+            <span class="cnum">${String(id).padStart(2,"0")}</span>
+            <span class="cname">${c.name}</span>
+            <span class="ctiming">${u.ok ? TIMING_LABEL[c.timing] : u.why}</span>
+          </button>`;
+}
+
+/* 自ターンにそのカードを切れるか */
+function usable(id, p){
+  const c = CARDS[id];
+  if(c.timing === "defense") return {ok:false, why:"防御割り込み"};
+  if(online && (p !== seat || S.turn !== seat)) return {ok:false, why:"相手の番"};
+  if(S.phase !== "normal" || S.step) return {ok:false, why:TIMING_LABEL[c.timing]};
+  if(id === 4 && !S.hands[p].includes(0)) return {ok:false, why:"0の手が無い"};
+  return {ok:true, why:""};
+}
+
+/* ================= 通常行動 ================= */
+function tap(p,h){
+  if(busy || S.over) return;
+
+  /* カードの入力待ち中は、その入力として解釈する */
+  if(S.step){
+    const st = S.step;
+    if(st.need === "ownHand" && p === st.who && (st.healTarget || alive(p,h))) return stepGotHand(p,h);
+    if(st.need === "enemyHand" && p === foe(st.who) && alive(p,h)) return stepGotHand(p,h);
+    return;
+  }
+
+  if(S.phase !== "normal" || !myTurn()) return;
+
+  if(p === S.turn){
+    if(!alive(p,h)) return;
+    S.sel = (S.sel && S.sel[1] === h) ? null : [p,h];
+    closeAllPanels();
+    render();
+    if(S.sel) say(`<b>${NAMES[p]}</b>が${hn(h)}手（${S.hands[p][h]}本）をかまえた。<span class="sub">相手の手をタップして攻撃</span>`);
+    return;
+  }
+
+  if(!S.sel){
+    say(`まず自分の手を選んでください。<span class="sub">手番は <b>${NAMES[S.turn]}</b></span>`);
+    return;
+  }
+  if(!alive(p,h)) return;
+
+  const from = S.sel;
+  S.sel = null;
+  declareAttack({
+    from: from[0], fromHand: from[1],
+    to: p, toHand: h,
+    damage: S.hands[from[0]][from[1]],
+    kind: "touch"
+  });
+}
+
+/* ================= 攻撃と応答フェーズ（§4） ================= */
+function declareAttack(atk){
+  if(S.pending) return;                // 解決中の攻撃を上書きしない
+  S.pending = Object.assign({modifiers:[], chain:0}, atk);
+  enterDefense();
+}
+
+/* 防御側が防御カードを持っているか？
+   持っていなければ応答フェーズを挟まず即解決する。ここでポーズを入れると
+   「持っていない」ことが相手に漏れるので、必ず無言でスキップする（§4）。 */
+function enterDefense(){
+  const p = S.pending;
+  p.responder = p.to;
+  const hasDefense = S.cards[p.to].some(id => CARDS[id].timing === "defense");
+  if(!hasDefense){ resolvePending(); return; }
+
+  S.phase = "defense";
+  p.deadline = Date.now() + RESPONSE_MS;
+  S.msg = `<b>${NAMES[p.from]}</b>の攻撃に <b>${NAMES[p.to]}</b> が応答できます。`
+    + `<span class="sub">15秒以内に防御カードを使うか、受ける。無反応なら自動でパス</span>`;
+  render();
+  say(S.msg);
+  commit();                                  // 相手の端末に応答フェーズと締切を渡す
+  if(iRespond()) openSheet(); else startWatchdog();
+}
+
+function openSheet(){
+  const p = S.pending;
+  const r = p.responder;
+  document.documentElement.style.setProperty("--resp-c", col(r));
+  document.getElementById("sheetWho").textContent = `${NAMES[r]}の応答`;
+  document.getElementById("sheetMsg").innerHTML = attackDesc(p);
+  renderSheetBody();
+  document.getElementById("sheet").classList.add("open");
+  document.documentElement.style.setProperty("--sheet-pad", "230px");
+  startTimer();
+}
+
+function attackDesc(p){
+  const via = p.kind === "touch" ? "タッチ"
+            : p.kind === "double" ? "「ダブル」"
+            : p.kind === "counter" ? "「カウンター」の返し"
+            : "「倍返指」";
+  const before = S.hands[p.to][p.toHand];
+  const after = norm(before + p.damage, p.to);
+  const fate = after === 0 ? "アウト" : `${after}本`;
+  return `${NAMES[p.from]}の${via}。<b>${p.damage}ダメージ</b>が${NAMES[p.to]}の${hn(p.toHand)}手へ。
+    <span class="sub">このまま通ると ${before} + ${p.damage} = ${before + p.damage} → ${fate}（法${S.mod[p.to]}）</span>`;
+}
+
+function renderSheetBody(){
+  const p = S.pending, r = p.responder;
+  const defs = S.cards[r].filter(id => CARDS[id].timing === "defense");
+  document.getElementById("sheetBody").innerHTML = `
+    <div class="hand-row">
+      ${defs.map((id,i) => `<button class="card" data-def="${id}" data-timing="defense" style="--i:${i}"
+          aria-label="${CARDS[id].name}：${CARDS[id].text}">
+          <span class="cnum">${String(id).padStart(2,"0")}</span>
+          <span class="cname">${CARDS[id].name}</span>
+          <span class="ctiming">使う</span>
+        </button>`).join("")}
+      <button class="card" data-def="pass" style="--i:${defs.length}" aria-label="何もせず受ける">
+        <span class="cnum">—</span><span class="cname">受ける</span><span class="ctiming">パス</span>
+      </button>
+    </div>`;
+  document.querySelectorAll('#sheetBody .card[data-def]').forEach(el => {
+    el.onclick = () => {
+      const v = el.dataset.def;
+      if(v === "pass") passDefense(); else respond(+v);
+    };
+  });
+}
+
+function closeSheet(){
+  document.getElementById("sheet").classList.remove("open");
+  document.documentElement.style.setProperty("--sheet-pad", "0px");
+  stopTimer();
+}
+
+/* タイマーは deadline（絶対時刻）を基準に描画する。
+   Phase 3 では deadline を Supabase 側に持たせ、ここは表示だけにする。 */
+function startTimer(){
+  stopTimer();
+  const stick = document.getElementById("timerStick");
+  const secs = document.getElementById("sheetSecs");
+  const tick = () => {
+    if(!S.pending || S.phase !== "defense") return stopTimer();
+    const left = S.pending.deadline - Date.now();
+    const pct = Math.max(0, Math.min(1, left / RESPONSE_MS));
+    stick.style.width = (pct * 100).toFixed(2) + "%";
+    const s = Math.max(0, Math.ceil(left / 1000));
+    secs.textContent = s + "秒";
+    stick.classList.toggle("low", s <= 5);
+    secs.classList.toggle("low", s <= 5);
+    if(left <= 0){ stopTimer(); passDefense(true); }
+  };
+  tick();
+  timerId = setInterval(tick, 100);
+}
+function stopTimer(){ if(timerId){ clearInterval(timerId); timerId = null; } }
+
+function passDefense(timedOut){
+  if(S.phase !== "defense") return;
+  /* 応答権があるのは防御側だけ。ただし相手の端末が落ちたときは攻撃側が締切+3秒で肩代わりする */
+  if(online && !iRespond() && !timedOut) return;
+  stopTimer();
+  closeSheet();
+  S.pending.passNote = timedOut ? "無反応で自動パス" : "受ける選択";
+  resolvePending();
+}
+
+/* 防御カードで応答する */
+function respond(id){
+  if(S.phase !== "defense" || !iRespond()) return;
+  const p = S.pending, r = p.responder;
+  stopTimer();                                   // カードを切った時点で時間切れの対象外にする
+
+  if(id === 2){                                  // シールド：ダメージが1になる
+    consume(r, 2);
+    p.damage = 1;
+    p.modifiers.push("shield");
+    closeSheet();
+    p.passNote = `${NAMES[r]}のシールドでダメージが1に`;
+    resolvePending();
+    return;
+  }
+
+  if(id === 9){                                  // ヒール：無効化して自分の手に足す
+    consume(r, 9);
+    closeSheet();
+    S.phase = "resolving";
+    beginStep({id:9, who:r, need:"ownHand", healTarget:true, amount:p.damage,
+               text:`<span class="sname">ヒール</span> 無効化しました。${p.damage}本を足す自分の手を選んでください（アウトの手も復活できます）`});
+    return;
+  }
+
+  if(id === 7){                                  // カウンター：無効化して相手に返す
+    consume(r, 7);
+    closeSheet();
+    S.phase = "resolving";
+    beginStep({id:7, who:r, need:"enemyHand", counterOf:p,
+               text:`<span class="sname">カウンター</span> ${NAMES[foe(r)]}のどの手に返しますか？`});
+    return;
+  }
+}
+
+/* 攻撃を実際に適用して手番を終える */
+async function resolvePending(){
+  const p = S.pending;
+  if(!p) return;                       // 二重解決を防ぐ
+  S.phase = "resolving";
+  busy = true;
+  closeSheet();
+  render();
+
+  const src = p.fromHand === null || p.fromHand === undefined ? null : {p:p.from, h:p.fromHand};
+  const before = S.hands[p.to][p.toHand];
+  const after = norm(before + p.damage, p.to);
+  await strike(src, p.to, p.toHand, p.damage, after);
+
+  const via = p.kind === "counter" ? "カウンターで返された攻撃" :
+              p.kind === "double"  ? "「ダブル」" :
+              p.kind === "twice"   ? "「倍返指」" : `${p.damage}本`;
+  const head = after === 0
+    ? `<b>${NAMES[p.from]}</b>の${via}が刺さり、${NAMES[p.to]}の${hn(p.toHand)}手が<b>アウト</b>。`
+    : `<b>${NAMES[p.from]}</b>の${via}が入った。`;
+  const calc = `<span class="sub">${before} + ${p.damage} = ${before + p.damage}`
+    + (after === 0 ? `（法${S.mod[p.to]}の倍数ちょうど）` : (before + p.damage >= S.mod[p.to] ? ` → 繰り下がって ${after}本` : `本`))
+    + (p.passNote ? ` ／ ${p.passNote}` : "") + `</span>`;
+
+  S.pending = null;
+  if(checkDeath()) return;
+  endTurn(head + calc);
+}
+
+/* 突き出す→着弾→折れる、の一連（Phase 1 の演出をそのまま使う） */
+async function strike(src, dp, dh, dmg, after){
+  const defEl = document.querySelector(`.hand[data-p="${dp}"][data-h="${dh}"]`);
+  if(src){
+    const atkEl = document.querySelector(`.hand[data-p="${src.p}"][data-h="${src.h}"]`);
+    if(atkEl){
+      atkEl.classList.add(src.p === 0 ? "lunge-up" : "lunge-down");
+      await wait(190);
+    }
+  }
+  if(!defEl){ S.hands[dp][dh] = after; return; }
+
+  defEl.querySelector(".flash").classList.add("go");
+  defEl.classList.add("hit");
+  const tag = document.createElement("div");
+  tag.className = "dmg";
+  tag.textContent = "+" + dmg;
+  defEl.appendChild(tag);
+
+  S.hands[dp][dh] = after;
+
+  if(after === 0){
+    defEl.querySelectorAll(".stick:not(.ghost)").forEach((s,i) => {
+      s.style.animationDelay = (i*40)+"ms";
+      s.classList.add("broken");
+    });
+    await wait(520);
+  } else {
+    await wait(420);
+  }
+}
+
+/* 数値がその場で変わるカード用の軽い演出 */
+async function poof(p, h, label, kind){
+  const el = document.querySelector(`.hand[data-p="${p}"][data-h="${h}"]`);
+  if(!el) return;
+  const f = el.querySelector(".flash");
+  if(kind === "heal") f.classList.add("heal");
+  f.classList.add("go");
+  const tag = document.createElement("div");
+  tag.className = "dmg " + (kind === "heal" ? "up" : kind === "nul" ? "nul" : "");
+  tag.textContent = label;
+  el.appendChild(tag);
+  await wait(430);
+}
+
+/* ================= カード ================= */
+function pickCard(id){
+  if(busy || S.over || S.phase !== "normal" || S.step || !myTurn()) return;
+  if(!S.cards[S.turn].includes(id)) return;
+  if(!usable(id, S.turn).ok) return;
+
+  if(S.pick === id){ closeCard(); return; }
+
+  S.sel = null;
+  S.pick = id;
+  closeSplit();
+  render();
+
+  const c = CARDS[id];
+  document.getElementById("cardDetail").innerHTML = `
+    <div class="dname">${c.name}</div>
+    <div class="dtext">${c.text}</div>
+    <div class="dnote">${TIMING_LABEL[c.timing]} ／ 1回だけ使えます。使うと手札から消えます（補充なし）</div>`;
+  document.getElementById("cardUse").onclick = () => useCard(id);
+  const panel = document.getElementById("card");
+  panel.classList.add("open");
+  panel.scrollIntoView({block:"nearest", behavior:"smooth"});
+  say(`<b>${NAMES[S.turn]}</b>が「${c.name}」を選んだ。<span class="sub">使えば手札から消えます</span>`);
+}
+
+function closeCard(){
+  S.pick = null;
+  document.getElementById("card").classList.remove("open");
+}
+
+/* 追加入力が要るカードはここで分岐する。
+   カードの消費は「効果が確定した瞬間」に行うので、途中でやめても失われない。 */
+function useCard(id){
+  if(busy || S.over || S.phase !== "normal") return;
+  const me = S.turn;
+  closeCard();
+
+  switch(id){
+    case 1:  return runReverse(me);
+    case 10: return runCopy(me);
+    case 5:  return runExpand(me);
+    case 3:  return beginStep({id:3, who:me, need:"enemyHand",
+                text:`<span class="sname">隕石</span> どの手に落としますか？`});
+    case 4:  return beginStep({id:4, who:me, need:"number",
+                text:`<span class="sname">召喚</span> 生み出す本数を選んでください`});
+    case 6:  return beginStep({id:6, who:me, need:"ownHand",
+                text:`<span class="sname">倍返指</span> 攻撃する自分の手を選んでください`});
+    case 8:  return beginStep({id:8, who:me, need:"enemyHand",
+                text:`<span class="sname">ダブル</span> 両手の合計 ${S.hands[me][0] + S.hands[me][1]} をどの手に？`});
+  }
+}
+
+function consume(p, id){
+  S.cards[p] = S.cards[p].filter(x => x !== id);
+  S.used[p].push(id);
+}
+
+/* 消費のアニメーションを挟んでから消す */
+async function spend(p, id){
+  const el = document.querySelector(`.board .card[data-id="${id}"]`);
+  if(el && p === S.turn){ el.classList.add("spent"); await wait(340); }
+  consume(p, id);
+}
+
+/* ---- 入力ステップ ---- */
+function beginStep(step){
+  S.step = Object.assign({data:{}}, step);
+  render();
+  const bar = document.getElementById("stepBar");
+  document.getElementById("stepText").innerHTML = step.text;
+  bar.classList.add("open");
+  bar.scrollIntoView({block:"nearest", behavior:"smooth"});
+  if(step.need === "number") openNumbers();
+}
+
+function cancelStep(){
+  const st = S.step;
+  S.step = null;
+  closeStepUI();
+  /* 応答フェーズ由来のステップ（カウンター／ヒール）は取り消せない。
+     カードは既に消費済みなので、やめる＝そのまま受けるに倒す。 */
+  if(st && st.counterOf){ S.pending = st.counterOf; return resolvePending(); }
+  if(st && st.id === 9){ S.pending.passNote = "ヒールの回復先を選ばず終了"; return resolvePending(); }
+  S.phase = "normal";
+  render();
+  say(`やめました。<span class="sub">手番は <b>${NAMES[S.turn]}</b></span>`);
+}
+
+function closeStepUI(){
+  document.getElementById("stepBar").classList.remove("open");
+  document.getElementById("num").classList.remove("open");
+}
+
+function stepGotHand(p,h){
+  const st = S.step;
+
+  if(st.id === 3){                       // 隕石：手を決めたら数を選ぶ
+    st.data.target = [p,h];
+    st.need = "number";
+    document.getElementById("stepText").innerHTML =
+      `<span class="sname">隕石</span> ${NAMES[p]}の${hn(h)}手（${S.hands[p][h]}本）に足す数を選んでください`;
+    render();
+    openNumbers();
+    return;
+  }
+
+  if(st.id === 6){                       // 倍返指：自分の手 → 相手の手
+    if(st.need === "ownHand"){
+      st.data.mine = h;
+      st.need = "enemyHand";
+      document.getElementById("stepText").innerHTML =
+        `<span class="sname">倍返指</span> ${S.hands[p][h]}本 × 2 = <b>${S.hands[p][h]*2}ダメージ</b>。どの手を狙いますか？`;
+      render();
+      return;
+    }
+    const me = st.who, dmg = S.hands[me][st.data.mine] * 2;
+    S.step = null; closeStepUI();
+    busy = true;                       // 消費アニメ中に次の操作を受け付けない
+    spend(me, 6).then(() => {
+      busy = false;
+      render();
+      declareAttack({from:me, fromHand:st.data.mine, to:p, toHand:h, damage:dmg, kind:"twice"});
+    });
+    return;
+  }
+
+  if(st.id === 8){                       // ダブル：両手の合計で1回攻撃
+    const me = st.who, dmg = S.hands[me][0] + S.hands[me][1];
+    S.step = null; closeStepUI();
+    busy = true;                       // 消費アニメ中に次の操作を受け付けない
+    spend(me, 8).then(() => {
+      busy = false;
+      render();
+      declareAttack({from:me, fromHand:null, to:p, toHand:h, damage:dmg, kind:"double"});
+    });
+    return;
+  }
+
+  if(st.id === 7){                       // カウンター：返す先を選んだ
+    const orig = st.counterOf;
+    S.step = null; closeStepUI();
+    S.pending = {
+      from: st.who, fromHand: null,
+      to: p, toHand: h,
+      damage: orig.damage,
+      kind: "counter",
+      modifiers: orig.modifiers.concat("counter"),
+      chain: (orig.chain || 0) + 1
+    };
+    poof(orig.to, orig.toHand, "無効", "nul").then(() => {
+      say(`<b>${NAMES[st.who]}</b>がカウンター。<span class="sub">${orig.damage}ダメージを ${NAMES[p]}の${hn(h)}手へ返した</span>`);
+      enterDefense();      // 返された側もシールド／ヒール／カウンターで応答できる
+    });
+    return;
+  }
+
+  if(st.id === 9){                       // ヒール：回復先を選んだ
+    const me = st.who, amt = st.amount;
+    const before = S.hands[me][h];
+    const after = Math.min(before + amt, S.max[me]);   // 上限超過は切り捨て（繰り下がりはしない）
+    S.step = null; closeStepUI();
+    S.hands[me][h] = after;
+    const orig = S.pending;
+    S.pending = null;
+    poof(orig.to, orig.toHand, "無効", "nul")
+      .then(() => { render(); return poof(me, h, "+" + (after - before), "heal"); })
+      .then(() => {
+        render();
+        if(checkDeath()) return;
+        endTurn(`<b>${NAMES[me]}</b>のヒール。${NAMES[orig.from]}の攻撃を無効化した。`
+          + `<span class="sub">${hn(h)}手 ${before} → ${after}本`
+          + (before + amt > S.max[me] ? `（上限${S.max[me]}で切り捨て）` : "") + `</span>`);
+      });
+    return;
+  }
+}
+
+function openNumbers(){
+  const st = S.step;
+  const box = document.getElementById("numOpts");
+  const title = document.getElementById("numTitle");
+  box.innerHTML = "";
+
+  let choices = [];
+  if(st.id === 3){
+    const [tp, th] = st.data.target;
+    const before = S.hands[tp][th];
+    title.textContent = `足す数を選ぶ（${NAMES[tp]}の${hn(th)}手・法${S.mod[tp]}）`;
+    /* 法があるので、法以上の数は必ずどれかと同じ結果になる。
+       重複を出さないために 1〜法-1 だけ並べ、結果を添える。 */
+    for(let n = 1; n < S.mod[tp]; n++){
+      const after = norm(before + n, tp);
+      choices.push({n, label:`+${n}`, note: after === 0 ? "アウト" : `${after}本`, kill: after === 0});
+    }
+  } else if(st.id === 4){
+    title.textContent = `生み出す本数を選ぶ（上限${S.max[st.who]}）`;
+    for(let n = 1; n <= S.max[st.who]; n++) choices.push({n, label:String(n), note:`${n}本`, kill:false});
+  }
+
+  choices.forEach(c => {
+    const b = document.createElement("button");
+    b.className = "opt" + (c.kill ? " kill" : "");
+    b.innerHTML = `${c.label}<small>${c.note}</small>`;
+    b.onclick = () => stepGotNumber(c.n);
+    box.appendChild(b);
+  });
+  const panel = document.getElementById("num");
+  panel.classList.add("open");
+  panel.scrollIntoView({block:"nearest", behavior:"smooth"});
+}
+
+function stepGotNumber(n){
+  const st = S.step;
+
+  if(st.id === 3){                       // 隕石：防御割り込みの対象外なので即解決
+    const [tp, th] = st.data.target;
+    const me = st.who;
+    S.step = null; closeStepUI();
+    busy = true;
+    spend(me, 3).then(() => {
+      render();
+      const before = S.hands[tp][th];
+      const after = norm(before + n, tp);
+      return strike(null, tp, th, n, after).then(() => {
+        render();
+        if(checkDeath()) return;
+        endTurn(`<b>${NAMES[me]}</b>の隕石が ${NAMES[tp]}の${hn(th)}手を直撃。`
+          + `<span class="sub">${before} + ${n} = ${before + n} → ${after === 0 ? "アウト" : after + "本"}（法${S.mod[tp]}・防御不可）</span>`);
+      });
+    });
+    return;
+  }
+
+  if(st.id === 4){                       // 召喚：0の手に生み出す
+    const me = st.who;
+    const h = S.hands[me].indexOf(0);
+    S.step = null; closeStepUI();
+    busy = true;
+    spend(me, 4).then(() => {
+      S.hands[me][h] = n;
+      render();
+      return poof(me, h, "+" + n, "heal");
+    }).then(() => {
+      render();
+      endTurn(`<b>${NAMES[me]}</b>が${hn(h)}手に${n}本を召喚した。<span class="sub">アウトの手が復活</span>`);
+    });
+    return;
+  }
+}
+
+/* ---- 追加入力の要らないカード ---- */
+async function runReverse(me){
+  busy = true;
+  await spend(me, 1);
+  const a = S.hands[0].slice(), b = S.hands[1].slice();
+  /* 指の本数だけ入れ替える。拡張（上限・法）は本人に残るので、
+     受け取った本数は受け取る側の法で正規化される（§3 の想定内コンボ）。 */
+  S.hands[0] = b.map(v => norm(v, 0));
+  S.hands[1] = a.map(v => norm(v, 1));
+  render();
+  await poof(0, 0, "反転", "nul");
+  render();
+  if(checkDeath(me)) return;
+  endTurn(`<b>${NAMES[me]}</b>が反転。<span class="sub">${a.join("/")} ⇄ ${b.join("/")} → ${S.hands[0].join("/")} ／ ${S.hands[1].join("/")}（拡張は本人に残る）</span>`);
+}
+
+async function runCopy(me){
+  busy = true;
+  await spend(me, 10);
+  const opp = foe(me);
+  const src = S.hands[opp].slice();
+  S.hands[me] = src.map(v => norm(v, me));       // 上限を超える本数を受け取った手は即アウト
+  render();
+  await poof(me, 0, "コピー", "nul");
+  render();
+  if(checkDeath(me)) return;
+  endTurn(`<b>${NAMES[me]}</b>がコピー。<span class="sub">${NAMES[opp]}の ${src.join("/")} を写して ${S.hands[me].join("/")}（カードはコピーしない）</span>`);
+}
+
+async function runExpand(me){
+  busy = true;
+  await spend(me, 5);
+  S.max[me] = 5;
+  S.mod[me] = 6;
+  S.expanded[me] = true;
+  render();
+  await poof(me, 0, "拡張", "heal");
+  render();
+  endTurn(`<b>${NAMES[me]}</b>が拡張。<span class="sub">上限5本・法6になった（永久）。ちょうど6でアウト、超えたら6で繰り下がる</span>`);
+}
+
+/* ================= 分配 ================= */
+function splitOptions(){
+  if(!S) return [];
+  const [L,R] = S.hands[S.turn];
+  const total = L + R;
+  const max = S.max[S.turn];
+  const out = [];
+  for(let a = 0; a <= max; a++){
+    const b = total - a;
+    if(b < 0 || b > max) continue;
+    if(a === L && b === R) continue;   // 同じ配分に戻すだけの手は禁止
+    if(a === R && b === L) continue;   // 左右を入れ替えるだけも禁止
+    if(a === 0 && b === 0) continue;
+    out.push([a,b]);
+  }
+  return out;
+}
+
+function openSplit(){
+  if(busy || S.over || S.phase !== "normal" || S.step || !myTurn()) return;
+  S.sel = null;
+  closeCard();
+  render();
+  const box = document.getElementById("opts");
+  box.innerHTML = "";
+  splitOptions().forEach(([a,b]) => {
+    const btn = document.createElement("button");
+    btn.className = "opt";
+    btn.innerHTML = `${a} <span style="color:var(--dim)">/</span> ${b}`;
+    btn.onclick = () => applySplit(a,b);
+    box.appendChild(btn);
+  });
+  document.getElementById("split").classList.add("open");
+  say(`<b>${NAMES[S.turn]}</b>が指を組み替える。<span class="sub">左 / 右 の分けかたを選ぶ</span>`);
+}
+
+function closeSplit(){ document.getElementById("split").classList.remove("open"); }
+
+function applySplit(a,b){
+  const from = S.hands[S.turn].join("/");
+  S.hands[S.turn] = [a,b];
+  closeSplit();
+  endTurn(`指を組み替えた。<span class="sub">${from} → ${a}/${b}</span>`);
+}
+
+/* ================= 進行 ================= */
+function closeAllPanels(){
+  closeSplit(); closeCard(); closeStepUI(); closeSheet();
+}
+
+function endTurn(msg){
+  /* 保険：どの経路から来ても、両手アウトのプレイヤーが居るまま手番を回さない */
+  if(dead(0) || dead(1)){ S.pending = null; S.step = null; checkDeath(); return; }
+  S.sel = null;
+  S.pick = null;
+  S.step = null;
+  S.pending = null;
+  S.phase = "normal";
+  S.turn = foe(S.turn);
+  S.msg = msg + `<span class="sub">次は ${NAMES[S.turn]}</span>`;
+  closeAllPanels();
+  stopTimer(); clearTimeout(watchdog);
+  render();
+  say(S.msg);
+  busy = false;
+  commit();
+}
+
+/* 両手ともアウトなら負け。自分のカードで自滅した場合も同じ扱い。 */
+function checkDeath(actor){
+  const d0 = dead(0), d1 = dead(1);
+  if(!d0 && !d1) return false;
+  /* 同時に両者が落ちることは本来起きないが、起きた場合は行動した側の負けにする */
+  if(d0 && d1) finish(actor === 0 ? 1 : 0, "両者が同時に落ちたため、行動した側の負け");
+  else finish(d0 ? 1 : 0, "両手ともアウトで決着");
+  return true;
+}
+
+function finish(winner, why){
+  S.over = true;
+  S.phase = "finished";
+  busy = true;
+  S.turn = winner;
+  S.winner = winner;
+  S.why = why || "両手ともアウトで決着";
+  S.step = null; S.pending = null;
+  S.msg = `<b>${NAMES[winner]}</b>の勝ち。<span class="sub">${S.why}</span>`;
+  closeAllPanels();
+  stopTimer(); clearTimeout(watchdog);
+  render();
+  showWin();
+  say(S.msg);
+  commit();
+}
+
+function showWin(){
+  const w = S.winner;
+  if(w === null || w === undefined) return;
+  document.documentElement.style.setProperty("--turn-c", col(w));
+  document.getElementById("winText").innerHTML =
+    (online ? (w === seat ? "あなた" : NAMES[w]) : NAMES[w]) + "<br>の勝ち";
+  document.getElementById("winWhy").textContent = S.why || "両手ともアウトで決着";
+  document.getElementById("win").classList.add("open");
+}
+
+boot();
+</script>

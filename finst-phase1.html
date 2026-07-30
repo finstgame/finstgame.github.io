@@ -1,0 +1,552 @@
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>フィンスト — Phase 1</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Dela+Gothic+One&family=Zen+Kaku+Gothic+New:wght@400;700;900&display=swap" rel="stylesheet">
+
+<style>
+  :root{
+    --ink:#0D1522;
+    --panel:#16223A;
+    --panel-hi:#1E2E4C;
+    --bone:#F5F0E6;
+    --dim:#66799A;
+    --p0:#33D9BE;
+    --p1:#FF5F7E;
+    --wood:#E3B778;
+    --stick-w: clamp(9px, 2.6vw, 14px);
+    --stick-h: clamp(46px, 12vw, 74px);
+    --r: 14px;
+  }
+
+  *{box-sizing:border-box; margin:0; padding:0; -webkit-tap-highlight-color:transparent;}
+
+  body{
+    background:
+      radial-gradient(120% 80% at 50% 0%, #17253E 0%, transparent 60%),
+      radial-gradient(120% 80% at 50% 100%, #17253E 0%, transparent 60%),
+      var(--ink);
+    color:var(--bone);
+    font-family:"Zen Kaku Gothic New", system-ui, sans-serif;
+    min-height:100vh;
+    display:flex;
+    justify-content:center;
+    padding:12px;
+  }
+
+  .app{
+    width:100%;
+    max-width:460px;
+    display:flex;
+    flex-direction:column;
+    gap:10px;
+  }
+
+  /* ---------- header ---------- */
+  .top{
+    display:flex;
+    align-items:baseline;
+    justify-content:space-between;
+    padding:2px 4px;
+  }
+  .brand{
+    font-family:"Dela Gothic One", sans-serif;
+    font-size:clamp(20px, 6vw, 26px);
+    letter-spacing:.04em;
+  }
+  .brand .dot{color:var(--wood);}
+  .phase-tag{
+    font-size:11px;
+    color:var(--dim);
+    letter-spacing:.14em;
+  }
+
+  /* ---------- player board ---------- */
+  .board{
+    background:var(--panel);
+    border-radius:var(--r);
+    padding:14px 14px 16px;
+    border:2px solid transparent;
+    transition:border-color .25s, background .25s;
+    position:relative;
+  }
+  .board[data-active="true"]{
+    border-color:var(--c);
+    background:var(--panel-hi);
+  }
+  .board[data-dead="true"]{opacity:.5;}
+
+  .board-head{
+    display:flex;
+    align-items:center;
+    gap:8px;
+    margin-bottom:12px;
+  }
+  .pip{
+    width:10px; height:10px; border-radius:50%;
+    background:var(--c);
+    box-shadow:0 0 0 0 var(--c);
+  }
+  .board[data-active="true"] .pip{animation:pulse 1.8s infinite;}
+  @keyframes pulse{
+    0%{box-shadow:0 0 0 0 color-mix(in srgb, var(--c) 60%, transparent);}
+    70%{box-shadow:0 0 0 9px transparent;}
+    100%{box-shadow:0 0 0 0 transparent;}
+  }
+  .pname{font-weight:900; font-size:14px; letter-spacing:.08em;}
+  .ptag{
+    margin-left:auto;
+    font-size:11px;
+    color:var(--dim);
+    letter-spacing:.1em;
+  }
+
+  .hands{display:flex; gap:10px;}
+
+  .hand{
+    flex:1;
+    background:#0F1A2C;
+    border:2px solid #22314E;
+    border-radius:12px;
+    padding:10px 6px 8px;
+    display:flex;
+    flex-direction:column;
+    align-items:center;
+    gap:8px;
+    cursor:pointer;
+    position:relative;
+    transition:transform .18s cubic-bezier(.34,1.56,.64,1), border-color .18s, box-shadow .18s;
+  }
+  .hand:focus-visible{outline:3px solid var(--wood); outline-offset:2px;}
+  .hand[data-out="true"]{cursor:default; border-style:dashed; border-color:#2A3550;}
+  .hand.selectable:hover{border-color:var(--c);}
+  .hand.selected{
+    transform:translateY(-8px);
+    border-color:var(--c);
+    box-shadow:0 8px 0 -2px color-mix(in srgb, var(--c) 35%, transparent);
+  }
+  .hand.target{
+    border-color:var(--wood);
+    animation:beckon 1s ease-in-out infinite;
+  }
+  @keyframes beckon{
+    0%,100%{transform:translateY(0);}
+    50%{transform:translateY(-4px);}
+  }
+
+  .sticks{
+    display:flex;
+    gap:5px;
+    align-items:flex-end;
+    height:var(--stick-h);
+  }
+  .stick{
+    width:var(--stick-w);
+    height:var(--stick-h);
+    border-radius:calc(var(--stick-w)/2);
+    background:linear-gradient(180deg, var(--c) 0%, color-mix(in srgb, var(--c) 62%, #0A1220) 100%);
+    box-shadow:inset 0 -3px 0 color-mix(in srgb, #000 22%, transparent);
+    transform-origin:bottom center;
+    animation:raise .32s cubic-bezier(.34,1.56,.64,1) backwards;
+    animation-delay:calc(var(--i) * 45ms);
+  }
+  @keyframes raise{
+    from{transform:scaleY(.1) translateY(6px); opacity:0;}
+    to{transform:scaleY(1) translateY(0); opacity:1;}
+  }
+  .stick.ghost{
+    background:none;
+    border:1.5px dashed #2A3550;
+    box-shadow:none;
+    animation:none;
+  }
+  .stick.broken{
+    animation:snap .5s ease-in forwards;
+  }
+  @keyframes snap{
+    0%{transform:rotate(0) translateY(0); opacity:1;}
+    30%{transform:rotate(-14deg) translateY(-6px);}
+    100%{transform:rotate(70deg) translateY(40px); opacity:0;}
+  }
+
+  .count{
+    font-family:"Dela Gothic One", sans-serif;
+    font-size:22px;
+    line-height:1;
+    color:var(--c);
+  }
+  .hand[data-out="true"] .count{color:#3B4A69; font-size:14px; padding:4px 0;}
+
+  /* lunge */
+  .hand.lunge-down{animation:lungeDown .34s ease-in-out;}
+  .hand.lunge-up{animation:lungeUp .34s ease-in-out;}
+  @keyframes lungeDown{
+    0%{transform:translateY(-8px);} 45%{transform:translateY(26px) scale(1.05);} 100%{transform:translateY(0);}
+  }
+  @keyframes lungeUp{
+    0%{transform:translateY(-8px);} 45%{transform:translateY(-34px) scale(1.05);} 100%{transform:translateY(0);}
+  }
+  .hand.hit{animation:shake .38s;}
+  @keyframes shake{
+    0%,100%{transform:translateX(0);}
+    20%{transform:translateX(-7px);} 40%{transform:translateX(6px);}
+    60%{transform:translateX(-4px);} 80%{transform:translateX(3px);}
+  }
+  .flash{
+    position:absolute; inset:0; border-radius:12px;
+    background:var(--wood); opacity:0; pointer-events:none;
+  }
+  .flash.go{animation:flash .38s ease-out;}
+  @keyframes flash{from{opacity:.75;} to{opacity:0;}}
+
+  .dmg{
+    position:absolute;
+    left:50%; top:6px;
+    transform:translateX(-50%);
+    font-family:"Dela Gothic One", sans-serif;
+    font-size:28px;
+    color:var(--wood);
+    text-shadow:0 2px 0 #0D1522;
+    pointer-events:none;
+    animation:pop .85s ease-out forwards;
+  }
+  @keyframes pop{
+    0%{opacity:0; transform:translate(-50%, 8px) scale(.6);}
+    25%{opacity:1; transform:translate(-50%, -6px) scale(1.15);}
+    100%{opacity:0; transform:translate(-50%, -34px) scale(1);}
+  }
+
+  /* ---------- centre: crossed chopsticks turn indicator ---------- */
+  .mid{
+    display:flex;
+    align-items:center;
+    gap:12px;
+    padding:2px 6px;
+  }
+  .cross{
+    flex:none;
+    width:46px; height:46px;
+    transition:transform .45s cubic-bezier(.34,1.56,.64,1);
+  }
+  .cross rect{transition:fill .3s;}
+  .log{
+    flex:1;
+    font-size:13px;
+    line-height:1.45;
+    color:var(--bone);
+    min-height:2.9em;
+  }
+  .log b{color:var(--turn-c);}
+  .log .sub{display:block; color:var(--dim); font-size:11.5px; letter-spacing:.04em;}
+
+  /* ---------- actions ---------- */
+  .bar{display:flex; gap:8px;}
+  button{
+    font-family:inherit;
+    font-weight:700;
+    font-size:14px;
+    color:var(--bone);
+    background:var(--panel);
+    border:2px solid #22314E;
+    border-radius:11px;
+    padding:13px 14px;
+    cursor:pointer;
+    flex:1;
+    transition:transform .12s, background .18s, border-color .18s;
+  }
+  button:hover:not(:disabled){background:var(--panel-hi); border-color:var(--turn-c);}
+  button:active:not(:disabled){transform:translateY(2px);}
+  button:disabled{opacity:.35; cursor:default;}
+  button:focus-visible{outline:3px solid var(--wood); outline-offset:2px;}
+  button.primary{background:var(--turn-c); color:#0D1522; border-color:var(--turn-c);}
+  button.ghost{flex:0 0 auto; padding:13px 16px; color:var(--dim);}
+
+  /* split picker */
+  .split{
+    background:var(--panel);
+    border:2px solid var(--turn-c);
+    border-radius:var(--r);
+    padding:12px;
+    display:none;
+    flex-direction:column;
+    gap:10px;
+  }
+  .split.open{display:flex; animation:slideIn .25s ease-out;}
+  @keyframes slideIn{from{opacity:0; transform:translateY(8px);} to{opacity:1; transform:none;}}
+  .split h3{font-size:12px; letter-spacing:.12em; color:var(--dim); font-weight:700;}
+  .opts{display:flex; flex-wrap:wrap; gap:8px;}
+  .opt{
+    flex:0 0 auto;
+    font-family:"Dela Gothic One", sans-serif;
+    font-size:17px;
+    padding:10px 15px;
+    background:#0F1A2C;
+    border:2px solid #22314E;
+    border-radius:10px;
+  }
+
+  /* winner */
+  .win{
+    position:fixed; inset:0;
+    background:rgba(8,13,22,.9);
+    display:none;
+    align-items:center;
+    justify-content:center;
+    flex-direction:column;
+    gap:18px;
+    padding:24px;
+    z-index:10;
+  }
+  .win.open{display:flex; animation:flash-in .4s ease-out;}
+  @keyframes flash-in{from{opacity:0;} to{opacity:1;}}
+  .win h2{
+    font-family:"Dela Gothic One", sans-serif;
+    font-size:clamp(30px, 11vw, 46px);
+    color:var(--turn-c);
+    text-align:center;
+    line-height:1.25;
+  }
+  .win button{max-width:260px;}
+
+  @media (prefers-reduced-motion: reduce){
+    *{animation-duration:.01ms !important; animation-iteration-count:1 !important; transition-duration:.01ms !important;}
+  }
+</style>
+
+<div class="app">
+  <div class="top">
+    <div class="brand">フィンスト<span class="dot">.</span></div>
+    <div class="phase-tag">PHASE 1 — 素の割り箸</div>
+  </div>
+
+  <div class="board" id="board1"></div>
+
+  <div class="mid">
+    <svg class="cross" id="cross" viewBox="0 0 100 100" aria-hidden="true">
+      <rect x="44" y="8" width="12" height="84" rx="6" transform="rotate(20 50 50)"/>
+      <rect x="44" y="8" width="12" height="84" rx="6" transform="rotate(-20 50 50)"/>
+    </svg>
+    <div class="log" id="log"></div>
+  </div>
+
+  <div class="board" id="board0"></div>
+
+  <div class="split" id="split">
+    <h3>分けかたを選ぶ</h3>
+    <div class="opts" id="opts"></div>
+    <button class="ghost" onclick="closeSplit()">やめる</button>
+  </div>
+
+  <div class="bar">
+    <button id="splitBtn" onclick="openSplit()">分配する</button>
+    <button class="ghost" onclick="reset()">最初から</button>
+  </div>
+</div>
+
+<div class="win" id="win">
+  <h2 id="winText"></h2>
+  <button class="primary" onclick="reset()">もう一戦</button>
+</div>
+
+<script>
+const MAX = 4;            // 5ちょうどでアウト。超えた分は5で割った余りに繰り下がる（拡張カードで上限が5になる）
+const NAMES = ["プレイヤー1", "プレイヤー2"];
+let S, busy = false;
+
+function reset(){
+  S = {
+    hands: [[1,1],[1,1]],
+    turn: Math.random() < 0.5 ? 0 : 1,   // 先攻はランダム
+    sel: null,
+    over: false
+  };
+  busy = false;
+  document.getElementById("win").classList.remove("open");
+  closeSplit();
+  render();
+  say(`<b>${NAMES[S.turn]}</b>の先攻ではじまります。<span class="sub">自分の手を選んで、相手の手をタップ</span>`);
+}
+
+const alive = (p,h) => S.hands[p][h] > 0;
+const dead  = p => S.hands[p][0] === 0 && S.hands[p][1] === 0;
+const col   = p => p === 0 ? "var(--p0)" : "var(--p1)";
+
+function say(html){ document.getElementById("log").innerHTML = html; }
+
+function render(){
+  document.documentElement.style.setProperty("--turn-c", col(S.turn));
+  document.getElementById("cross").querySelectorAll("rect")
+    .forEach(r => r.setAttribute("fill", col(S.turn)));
+  document.getElementById("cross").style.transform =
+    S.turn === 0 ? "rotate(0deg)" : "rotate(180deg)";
+
+  [0,1].forEach(p => {
+    const el = document.getElementById("board"+p);
+    el.style.setProperty("--c", col(p));
+    el.dataset.active = String(S.turn === p && !S.over);
+    el.dataset.dead = String(dead(p));
+    el.innerHTML = `
+      <div class="board-head">
+        <span class="pip"></span>
+        <span class="pname">${NAMES[p]}</span>
+        <span class="ptag">${S.turn === p && !S.over ? "手番" : ""}</span>
+      </div>
+      <div class="hands">${[0,1].map(h => handHTML(p,h)).join("")}</div>`;
+  });
+
+  document.querySelectorAll(".hand").forEach(el => {
+    el.onclick = () => tap(+el.dataset.p, +el.dataset.h);
+    el.onkeydown = e => { if(e.key === "Enter" || e.key === " "){ e.preventDefault(); tap(+el.dataset.p, +el.dataset.h); } };
+  });
+
+  const canSplit = !S.over && splitOptions().length > 0;
+  document.getElementById("splitBtn").disabled = !canSplit;
+}
+
+function handHTML(p,h){
+  const v = S.hands[p][h];
+  const out = v === 0;
+  const isMine = p === S.turn && !S.over;
+  const selected = S.sel && S.sel[0] === p && S.sel[1] === h;
+  const isTarget = S.sel && p !== S.turn && !out;
+
+  let cls = "hand";
+  if(isMine && !out) cls += " selectable";
+  if(selected) cls += " selected";
+  if(isTarget) cls += " target";
+
+  const sticks = Array.from({length: MAX}, (_,i) =>
+    `<div class="stick${i < v ? "" : " ghost"}" style="--i:${i}"></div>`).join("");
+
+  return `<div class="${cls}" data-p="${p}" data-h="${h}" data-out="${out}"
+            tabindex="${(isMine && !out) || isTarget ? 0 : -1}"
+            role="button" aria-label="${NAMES[p]}の${h===0?"左":"右"}手 ${out?"アウト":v+"本"}">
+            <div class="flash"></div>
+            <div class="sticks">${sticks}</div>
+            <div class="count">${out ? "OUT" : v}</div>
+          </div>`;
+}
+
+function tap(p,h){
+  if(busy || S.over) return;
+
+  if(p === S.turn){
+    if(!alive(p,h)) return;
+    S.sel = (S.sel && S.sel[1] === h) ? null : [p,h];
+    closeSplit();
+    render();
+    if(S.sel) say(`<b>${NAMES[p]}</b>が${h===0?"左":"右"}手（${S.hands[p][h]}本）をかまえた。<span class="sub">相手の手をタップして攻撃</span>`);
+    return;
+  }
+
+  if(!S.sel){
+    say(`まず自分の手を選んでください。<span class="sub">手番は <b>${NAMES[S.turn]}</b></span>`);
+    return;
+  }
+  if(!alive(p,h)) return;
+  attack(S.sel[0], S.sel[1], p, h);
+}
+
+async function attack(ap, ah, dp, dh){
+  busy = true;
+  const dmg = S.hands[ap][ah];
+  const atkEl = document.querySelector(`.hand[data-p="${ap}"][data-h="${ah}"]`);
+  const defEl = document.querySelector(`.hand[data-p="${dp}"][data-h="${dh}"]`);
+
+  atkEl.classList.add(ap === 0 ? "lunge-up" : "lunge-down");
+  await wait(190);
+
+  defEl.querySelector(".flash").classList.add("go");
+  defEl.classList.add("hit");
+  const tag = document.createElement("div");
+  tag.className = "dmg";
+  tag.textContent = "+" + dmg;
+  defEl.appendChild(tag);
+
+  const before = S.hands[dp][dh];
+  const total = before + dmg;
+  const after = total % 5;            // 5ちょうどでアウト、超えたら繰り下がる
+  const knockedOut = after === 0;
+  S.hands[dp][dh] = after;
+
+  if(knockedOut){
+    defEl.querySelectorAll(".stick:not(.ghost)").forEach((s,i) => {
+      s.style.animationDelay = (i*40)+"ms";
+      s.classList.add("broken");
+    });
+    await wait(520);
+  } else {
+    await wait(420);
+  }
+
+  S.sel = null;
+  const msg = knockedOut
+    ? `<b>${NAMES[ap]}</b>の${dmg}本が突き刺さり、${NAMES[dp]}の${dh===0?"左":"右"}手が<b>アウト</b>。<span class="sub">${before} + ${dmg} = ${total}（5の倍数ちょうど）</span>`
+    : `<b>${NAMES[ap]}</b>が${dmg}本を叩き込んだ。<span class="sub">${before} + ${dmg} = ${total}${total >= 5 ? " → 繰り下がって " + after : ""}本</span>`;
+
+  if(dead(dp)){ finish(ap); return; }
+  S.turn = 1 - S.turn;
+  render();
+  say(msg + `<span class="sub">次は ${NAMES[S.turn]}</span>`);
+  busy = false;
+}
+
+/* ---- 分配 ---- */
+function splitOptions(){
+  const [L,R] = S.hands[S.turn];
+  const total = L + R;
+  const out = [];
+  for(let a = 0; a <= MAX; a++){
+    const b = total - a;
+    if(b < 0 || b > MAX) continue;
+    if(a === L && b === R) continue;   // 同じ配分に戻すだけの手は禁止
+    if(a === R && b === L) continue;   // 左右を入れ替えるだけも禁止
+    if(a === 0 && b === 0) continue;
+    out.push([a,b]);
+  }
+  return out;
+}
+
+function openSplit(){
+  if(busy || S.over) return;
+  S.sel = null;
+  render();
+  const box = document.getElementById("opts");
+  box.innerHTML = "";
+  splitOptions().forEach(([a,b]) => {
+    const btn = document.createElement("button");
+    btn.className = "opt";
+    btn.innerHTML = `${a} <span style="color:var(--dim)">/</span> ${b}`;
+    btn.onclick = () => applySplit(a,b);
+    box.appendChild(btn);
+  });
+  document.getElementById("split").classList.add("open");
+  say(`<b>${NAMES[S.turn]}</b>が指を組み替える。<span class="sub">左 / 右 の分けかたを選ぶ</span>`);
+}
+
+function closeSplit(){ document.getElementById("split").classList.remove("open"); }
+
+function applySplit(a,b){
+  const from = S.hands[S.turn].join("/");
+  S.hands[S.turn] = [a,b];
+  closeSplit();
+  S.turn = 1 - S.turn;
+  render();
+  say(`指を組み替えた。<span class="sub">${from} → ${a}/${b} ／ 次は ${NAMES[S.turn]}</span>`);
+}
+
+function finish(winner){
+  S.over = true;
+  busy = true;
+  S.turn = winner;
+  render();
+  document.documentElement.style.setProperty("--turn-c", col(winner));
+  document.getElementById("winText").innerHTML = `${NAMES[winner]}<br>の勝ち`;
+  document.getElementById("win").classList.add("open");
+  say(`<b>${NAMES[winner]}</b>の勝ち。<span class="sub">両手ともアウトで決着</span>`);
+}
+
+const wait = ms => new Promise(r => setTimeout(r, ms));
+reset();
+</script>
