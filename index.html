@@ -557,6 +557,93 @@
   .win .why{font-size:13px; color:var(--dim); text-align:center; line-height:1.5;}
   .win button{max-width:260px;}
 
+  /* ---------- 遊び方 / カード一覧 ---------- */
+  .icon-btn{
+    flex:0 0 auto;
+    width:28px; height:28px;
+    padding:0;
+    border-radius:50%;
+    border:2px solid #22314E;
+    background:var(--panel);
+    color:var(--dim);
+    font-family:"Dela Gothic One", sans-serif;
+    font-size:13px;
+    line-height:1;
+    margin-left:10px;
+  }
+  .icon-btn:hover{background:var(--panel-hi); border-color:var(--wood); color:var(--bone);}
+
+  .info{
+    position:fixed; inset:0;
+    /* 読み物なので背面は透かさない */
+    background:
+      radial-gradient(120% 60% at 50% 0%, #17253E 0%, transparent 60%),
+      var(--ink);
+    display:none;
+    justify-content:center;
+    z-index:50;
+    padding:12px;
+    overflow-y:auto;
+    overscroll-behavior:contain;
+  }
+  .info.open{display:flex; animation:flash-in .25s ease-out;}
+  .info-inner{width:100%; max-width:460px; padding-bottom:28px;}
+  .info-head{
+    position:sticky; top:0; z-index:1;
+    display:flex; align-items:center;
+    padding:12px 2px;
+    background:var(--ink);
+    box-shadow:0 8px 12px -8px var(--ink);
+  }
+  .info-title{
+    font-family:"Dela Gothic One", sans-serif;
+    font-size:20px;
+    flex:1;
+  }
+  .info-body h4{
+    font-size:11px; letter-spacing:.14em; color:var(--dim);
+    font-weight:700; margin:20px 0 9px;
+  }
+  .info-body h4:first-child{margin-top:0;}
+  .info-body p{font-size:13.5px; line-height:1.7; margin-bottom:9px;}
+  .info-body ul{list-style:none; display:flex; flex-direction:column; gap:7px;}
+  .info-body li{
+    font-size:13px; line-height:1.6;
+    padding-left:15px; position:relative;
+  }
+  .info-body li::before{
+    content:""; position:absolute; left:0; top:.62em;
+    width:6px; height:2px; border-radius:1px; background:var(--wood);
+  }
+  .info-body b{color:var(--wood);}
+  .info-body .em{color:var(--bone); font-weight:700;}
+
+  .clist{display:flex; flex-direction:column; gap:8px;}
+  .crow{
+    display:grid;
+    grid-template-columns:34px 1fr;
+    gap:10px;
+    background:var(--panel);
+    border:2px solid #22314E;
+    border-radius:11px;
+    padding:10px 11px;
+  }
+  .crow .n{
+    font-family:"Dela Gothic One", sans-serif;
+    font-size:13px;
+    color:var(--dim);
+    padding-top:2px;
+  }
+  .crow .nm{font-weight:900; font-size:14px; letter-spacing:.02em;}
+  .crow .tm{
+    font-size:9.5px; letter-spacing:.06em; color:var(--dim);
+    border:1.5px solid #2A3550; border-radius:5px;
+    padding:1px 6px; margin-left:7px; white-space:nowrap;
+  }
+  .crow[data-timing="defense"]{border-color:color-mix(in srgb, var(--wood) 34%, #22314E);}
+  .crow[data-timing="defense"] .tm{color:var(--wood); border-color:color-mix(in srgb, var(--wood) 45%, transparent);}
+  .crow .tx{font-size:12.5px; line-height:1.55; color:#B9C6DC; margin-top:4px;}
+
   /* ---------- ロビー（Phase 3） ---------- */
   .lobby{
     position:fixed; inset:0;
@@ -605,6 +692,12 @@
   .join-row input:focus{outline:3px solid var(--wood); outline-offset:2px;}
   .join-row button{flex:0 0 auto; width:auto;}
   .lobby-note{font-size:11.5px; line-height:1.6; color:var(--dim);}
+  .lobby-about{
+    font-size:12.5px; line-height:1.75; color:#B9C6DC;
+    background:var(--panel); border:2px solid #22314E;
+    border-radius:var(--r); padding:12px 13px;
+  }
+  .lobby-about b{color:var(--wood);}
   .lobby-err{font-size:12.5px; line-height:1.5; color:var(--p1); min-height:1.2em;}
 
   /* 合流待ち：ルームコードを大きく出す */
@@ -664,6 +757,7 @@
   <div class="top">
     <div class="brand">フィンスト<span class="dot">.</span></div>
     <div class="net-tag" id="netTag"></div>
+    <button class="icon-btn" id="infoBtn" onclick="openInfo()" aria-label="遊び方とカード一覧">?</button>
   </div>
 
   <div class="waiting-bar" id="waitBar"></div>
@@ -709,7 +803,27 @@
   <div class="bar">
     <button id="splitBtn" onclick="openSplit()">分配する</button>
     <button class="ghost" id="resetBtn" onclick="restart()">最初から</button>
+    <button class="ghost" id="quitBtn" onclick="askQuit()">やめる</button>
   </div>
+</div>
+
+<!-- 遊び方とカード一覧 -->
+<div class="info" id="info">
+  <div class="info-inner">
+    <div class="info-head">
+      <span class="info-title">遊び方</span>
+      <button class="icon-btn" onclick="closeInfo()" aria-label="閉じる">×</button>
+    </div>
+    <div class="info-body" id="infoBody"></div>
+  </div>
+</div>
+
+<!-- やめるときの確認 -->
+<div class="win" id="confirm">
+  <h2 id="confirmText"></h2>
+  <div class="why" id="confirmWhy"></div>
+  <button class="primary" id="confirmYes"></button>
+  <button class="ghost" style="max-width:260px;width:100%" onclick="closeConfirm()">戻る</button>
 </div>
 
 <!-- ロビー（部屋を作る / コードで参加 / 1台で遊ぶ） -->
@@ -733,7 +847,8 @@
 <div class="win" id="win">
   <h2 id="winText"></h2>
   <div class="why" id="winWhy"></div>
-  <button class="primary" onclick="restart()">もう一戦</button>
+  <button class="primary" id="winAgain" onclick="restart()">もう一戦</button>
+  <button class="ghost" style="max-width:260px;width:100%" onclick="toLobby()">ロビーに戻る</button>
 </div>
 
 <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2.58.0/dist/umd/supabase.min.js"></script>
@@ -839,10 +954,10 @@ function openingMsg(){
 
 /* 状態が確定した所（手番交代・応答フェーズ開始・決着）で呼ぶ */
 function commit(){
-  if(!online || applying || !room || !sb) return;
+  if(!online || applying || !room || !sb) return Promise.resolve();
   S.seq = (S.seq || 0) + 1;
   const snap = snapshot();
-  sb.from("matches")
+  return sb.from("matches")
     .update({ state: snap,
               deadline: S.pending && S.pending.deadline ? new Date(S.pending.deadline).toISOString() : null })
     .eq("room_code", room)
@@ -1063,6 +1178,7 @@ function showLobby(mode){
       </div>
       <button class="primary" id="shareBtn">リンクをコピーして送る</button>
       <div class="lobby-note">相手がこのコードを入力するか、コピーしたリンクを開くと始まります。<span class="dots">待機中</span></div>
+      <button class="ghost" style="width:100%" onclick="openInfo()">待つあいだに遊び方を読む</button>
       <button class="ghost" onclick="leaveRoom()">やめる</button>
       <div class="lobby-err" id="lobbyErr"></div>`;
     document.getElementById("shareBtn").onclick = shareLink;
@@ -1072,6 +1188,12 @@ function showLobby(mode){
   el.innerHTML = `
     <div class="brand">フィンスト<span class="dot">.</span></div>
     <div class="tag">割り箸ゲーム ＋ 能力カード</div>
+    <div class="lobby-about">
+      指で遊ぶ「割り箸ゲーム」に能力カードを乗せた2人対戦です。
+      自分の手で相手の手をタップして本数を押しつけ、<b>相手の両手をアウトにしたら勝ち</b>。
+      1試合はだいたい3〜5分です。
+    </div>
+    <button class="ghost" style="width:100%" onclick="openInfo()">遊び方とカード一覧を見る</button>
     <h3>オンラインで対戦する</h3>
     <button class="primary" onclick="createRoom()">部屋を作る</button>
     <div class="join-row">
@@ -1127,6 +1249,104 @@ function boot(){
     document.getElementById("codeInput").value = code;
     joinRoom(code);
   }
+}
+
+/* ================= 遊び方とカード一覧 ================= */
+function openInfo(){
+  document.getElementById("infoBody").innerHTML = `
+    <h4>フィンストとは</h4>
+    <p>指で遊ぶ「割り箸ゲーム」に、能力カードを乗せた2人対戦です。
+       <span class="em">相手の両手をアウトにしたら勝ち</span>。
+       競技バランスよりカオス重視で作ってあります。</p>
+
+    <h4>基本ルール</h4>
+    <ul>
+      <li>おたがい <b>左手1本 / 右手1本</b> ではじまります</li>
+      <li>自分の生きている手で相手の生きている手をタップすると、<b>自分の本数が相手に足される</b></li>
+      <li><b>ちょうど5になった手はアウト</b>。5を超えたら5で割った余りに繰り下がる
+          （例：3本の手に4ダメージ → 7 → <b>2本</b>で生存）</li>
+      <li>自分の番にできるのは <span class="em">タッチ・分配・カード1枚</span> のどれか1つだけ</li>
+      <li>分配は両手の合計を組み替えます。<b>アウトの手も復活できます</b>。
+          ただし同じ配分に戻すだけ・左右を入れ替えるだけは禁止</li>
+      <li>両手ともアウトになったら負け</li>
+    </ul>
+
+    <h4>能力カード</h4>
+    <ul>
+      <li>10種から <b>ランダムに3枚</b> 配られます</li>
+      <li>各カードは <b>1回だけ</b>。使ったら消えて、補充はありません</li>
+      <li>終盤は自然と、素の割り箸ゲームに戻ります</li>
+      <li><b>相手の手札は見えません</b>（枚数だけ分かります）</li>
+      <li>「防御割り込み」のカードは、<b>相手に攻撃されたとき</b>に使います。
+          15秒以内に選ばないと自動でパスになります</li>
+      <li><b>拡張</b>を使ったプレイヤーだけ、上限が5本・アウトになる値が6に変わります</li>
+    </ul>
+
+    <h4>カード一覧</h4>
+    <div class="clist">
+      ${Object.keys(CARDS).map(Number).map(id => {
+        const c = CARDS[id];
+        return `<div class="crow" data-timing="${c.timing}">
+          <div class="n">${String(id).padStart(2,"0")}</div>
+          <div>
+            <div><span class="nm">${c.name}</span><span class="tm">${TIMING_LABEL[c.timing]}</span></div>
+            <div class="tx">${c.text}</div>
+          </div>
+        </div>`;
+      }).join("")}
+    </div>
+
+    <h4>オンライン対戦について</h4>
+    <ul>
+      <li>部屋を作って<b>6文字のコード</b>を相手に送るか、リンクを開いてもらえば始まります</li>
+      <li>途中で閉じても、同じ端末で開き直せば<b>同じ対戦に戻れます</b></li>
+      <li>やめたいときは下の「やめる」から。対戦中にやめると<b>投了扱い</b>になります</li>
+    </ul>`;
+  document.getElementById("info").classList.add("open");
+  document.getElementById("info").scrollTop = 0;
+}
+function closeInfo(){ document.getElementById("info").classList.remove("open"); }
+
+/* ================= 終わり方 ================= */
+function closeConfirm(){ document.getElementById("confirm").classList.remove("open"); }
+
+function askQuit(){
+  /* 決着済みなら確認せずロビーへ */
+  if(S.over){ toLobby(); return; }
+  const yes = document.getElementById("confirmYes");
+  document.getElementById("confirmText").textContent = "対戦をやめますか？";
+  if(online){
+    document.getElementById("confirmWhy").textContent =
+      `途中でやめると投了扱いになり、${NAMES[foe(seat)]}の勝ちになります。`;
+    yes.textContent = "投了してロビーに戻る";
+    yes.onclick = () => { closeConfirm(); resign(); };
+  } else {
+    document.getElementById("confirmWhy").textContent = "いまの対戦は消えます。";
+    yes.textContent = "ロビーに戻る";
+    yes.onclick = () => { closeConfirm(); toLobby(); };
+  }
+  document.getElementById("confirm").classList.add("open");
+}
+
+/* 投了。相手の端末にも結果を渡してからロビーへ戻る */
+function resign(){
+  stopTimer(); clearTimeout(watchdog);
+  S.over = true;
+  S.phase = "finished";
+  S.winner = foe(seat);
+  S.why = `${NAMES[seat]}が投了しました`;
+  S.msg = `<b>${NAMES[S.winner]}</b>の勝ち。<span class="sub">${S.why}</span>`;
+  S.pending = null; S.step = null; S.hit = null;
+  render();
+  say(S.msg);
+  Promise.resolve(commit()).then(toLobby);   // 相手に結果が届いてからロビーへ
+}
+
+function toLobby(){
+  document.getElementById("win").classList.remove("open");
+  closeConfirm(); closeInfo();
+  if(online) leaveRoom();
+  else { online = false; showLobby(); }
 }
 
 /* ---- 手番・応答の権利 ---- */
@@ -1985,6 +2205,7 @@ function showWin(){
   document.getElementById("winText").innerHTML =
     (online ? (w === seat ? "あなた" : NAMES[w]) : NAMES[w]) + "<br>の勝ち";
   document.getElementById("winWhy").textContent = S.why || "両手ともアウトで決着";
+  document.getElementById("winAgain").textContent = online ? "もう一戦" : "最初から";
   document.getElementById("win").classList.add("open");
 }
 
