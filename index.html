@@ -862,7 +862,7 @@
 
 const NAMES = ["プレイヤー1", "プレイヤー2"];
 const HAND_SIZE = 3;
-const RESPONSE_MS = 15000;          // §4 応答フェーズの制限時間
+const RESPONSE_MS = 5000;           // 応答フェーズの制限時間（仕様書§4は15秒だが、長すぎて間延びするため2026-07-31に5秒へ変更）
 
 /* --- カード定義（§3 の一覧）--------------------------------
    timing: self（自ターン）/ attack（自ターン・カード自体が攻撃）/ defense（防御割り込み）
@@ -1025,10 +1025,11 @@ async function animateDiff(before){
   }));
 }
 
-/* 応答側の端末が落ちた場合に、攻撃側の端末が締切+3秒で肩代わりする */
+/* 応答側の端末が落ちた場合に、攻撃側の端末が締切+2秒で肩代わりする。
+   窓が5秒に縮んだので、待たせる時間も詰めてある。 */
 function startWatchdog(){
   clearTimeout(watchdog);
-  const ms = Math.max(600, (S.pending.deadline - Date.now()) + 3000);
+  const ms = Math.max(600, (S.pending.deadline - Date.now()) + 2000);
   watchdog = setTimeout(() => {
     if(online && S.phase === "defense" && S.pending && S.pending.responder !== seat) passDefense(true);
   }, ms);
@@ -1279,7 +1280,7 @@ function openInfo(){
       <li>終盤は自然と、素の割り箸ゲームに戻ります</li>
       <li><b>相手の手札は見えません</b>（枚数だけ分かります）</li>
       <li>「防御割り込み」のカードは、<b>相手に攻撃されたとき</b>に使います。
-          15秒以内に選ばないと自動でパスになります</li>
+          5秒以内に選ばないと自動でパスになります</li>
       <li><b>拡張</b>を使ったプレイヤーだけ、上限が5本・アウトになる値が6に変わります</li>
     </ul>
 
@@ -1605,7 +1606,7 @@ function enterDefense(){
   S.phase = "defense";
   p.deadline = Date.now() + RESPONSE_MS;
   S.msg = `<b>${NAMES[p.from]}</b>の攻撃に <b>${NAMES[p.to]}</b> が応答できます。`
-    + `<span class="sub">15秒以内に防御カードを使うか、受ける。無反応なら自動でパス</span>`;
+    + `<span class="sub">5秒以内に防御カードを使うか、受ける。無反応なら自動でパス</span>`;
   render();
   say(S.msg);
   commit();                                  // 相手の端末に応答フェーズと締切を渡す
@@ -1678,8 +1679,8 @@ function startTimer(){
     stick.style.width = (pct * 100).toFixed(2) + "%";
     const s = Math.max(0, Math.ceil(left / 1000));
     secs.textContent = s + "秒";
-    stick.classList.toggle("low", s <= 5);
-    secs.classList.toggle("low", s <= 5);
+    stick.classList.toggle("low", s <= 2);
+    secs.classList.toggle("low", s <= 2);
     if(left <= 0){ stopTimer(); passDefense(true); }
   };
   tick();
