@@ -114,18 +114,21 @@
     70%{box-shadow:0 0 0 9px transparent;}
     100%{box-shadow:0 0 0 0 transparent;}
   }
-  .pname{font-weight:900; font-size:14px; letter-spacing:.08em;}
+  .pname{font-weight:900; font-size:14px; letter-spacing:.08em; white-space:nowrap;}
   .ptag{
     margin-left:auto;
     font-size:11px;
     color:var(--dim);
     letter-spacing:.1em;
+    white-space:nowrap;
   }
   /* 拡張したプレイヤーの印 */
   .exp{
     font-size:10px;
     font-weight:700;
     letter-spacing:.08em;
+    white-space:nowrap;
+    flex:0 0 auto;
     color:#0D1522;
     background:var(--wood);
     border-radius:5px;
@@ -896,7 +899,7 @@ const CARDS = {
   2:  {name:"シールド", timing:"defense", text:"受けるダメージが1になる"},
   3:  {name:"隕石",     timing:"self",    text:"相手の生きている手に好きな数字を足す。防御割り込みでは防げない"},
   4:  {name:"召喚",     timing:"self",    text:"片方が0の時、そこに1本〜自分の上限までの好きな数字を生み出す"},
-  5:  {name:"拡張",     timing:"self",    text:"自分の保持上限が5本になり、法が6になる（永久）"},
+  5:  {name:"拡張",     timing:"self",    text:"自分だけ、手を5本まで持てるようになり、アウトになる数が6に変わる（永久）"},
   6:  {name:"倍返指",   timing:"attack",  text:"このカード自体が攻撃を実行する。ダメージ2倍"},
   7:  {name:"カウンター",timing:"defense",text:"攻撃を無効化し、そのまま相手に返す。返す先の手は自分で選ぶ。重ねがけ可"},
   8:  {name:"ダブル",   timing:"attack",  text:"このカード自体が攻撃を実行する。両手の合計を相手の片手に"},
@@ -1409,7 +1412,7 @@ function openInfo(){
       <li>10種から3枚。<b>各1回きり</b>で補充なし</li>
       <li><b>相手の手札は見えない</b>（枚数だけ分かる）</li>
       <li>「防御割り込み」は<b>相手に攻撃されたとき</b>に使う。15秒で自動パス</li>
-      <li><b>拡張</b>を使うと、その人だけ上限5本・アウトは6になる</li>
+      <li><b>拡張</b>を使うと、<b>その人だけ5でアウトが6でアウト</b>に変わる。5本の手を持てるようになる</li>
     </ul>
 
     <h4>カード一覧</h4>
@@ -1675,7 +1678,7 @@ function render(){
       <div class="board-head">
         <span class="pip"></span>
         <span class="pname">${NAMES[p]}</span>
-        ${S.expanded[p] ? `<span class="exp">拡張 上限5 / 法6</span>` : ""}
+        ${S.expanded[p] ? `<span class="exp">6でアウト</span>` : ""}
         <span class="ptag">${S.turn === p && !S.over ? "手番" : ""}</span>
       </div>
       <div class="hands">${[0,1].map(h => handHTML(p,h)).join("")}</div>
@@ -1874,7 +1877,7 @@ function attackDesc(p){
   const after = norm(before + p.damage, p.to);
   const fate = after === 0 ? "アウト" : `${after}本`;
   return `${NAMES[p.from]}の${via}。<b>${p.damage}ダメージ</b>が${NAMES[p.to]}の${hn(p.toHand)}手へ。
-    <span class="sub">このまま通ると ${before} + ${p.damage} = ${before + p.damage} → ${fate}（法${S.mod[p.to]}）</span>`;
+    <span class="sub">このまま通ると ${before} + ${p.damage} = ${before + p.damage} → ${fate}（${S.mod[p.to]}ちょうどでアウト）</span>`;
 }
 
 function renderSheetBody(){
@@ -1999,7 +2002,7 @@ async function resolvePending(){
     ? `<b>${NAMES[p.from]}</b>の${via}が刺さり、${NAMES[p.to]}の${hn(p.toHand)}手が<b>アウト</b>。`
     : `<b>${NAMES[p.from]}</b>の${via}が入った。`;
   const calc = `<span class="sub">${before} + ${p.damage} = ${before + p.damage}`
-    + (after === 0 ? `（法${S.mod[p.to]}の倍数ちょうど）` : (before + p.damage >= S.mod[p.to] ? ` → 繰り下がって ${after}本` : `本`))
+    + (after === 0 ? `（${S.mod[p.to]}ちょうどでアウト）` : (before + p.damage >= S.mod[p.to] ? ` → 繰り下がって ${after}本` : `本`))
     + (p.passNote ? ` ／ ${p.passNote}` : "") + `</span>`;
 
   S.pending = null;
@@ -2244,7 +2247,7 @@ function openNumbers(){
   if(st.id === 3){
     const [tp, th] = st.data.target;
     const before = S.hands[tp][th];
-    title.textContent = `足す数を選ぶ（${NAMES[tp]}の${hn(th)}手・法${S.mod[tp]}）`;
+    title.textContent = `足す数を選ぶ（${NAMES[tp]}の${hn(th)}手・${S.mod[tp]}でアウト）`;
     /* 法があるので、法以上の数は必ずどれかと同じ結果になる。
        重複を出さないために 1〜法-1 だけ並べ、結果を添える。 */
     for(let n = 1; n < S.mod[tp]; n++){
@@ -2284,7 +2287,7 @@ function stepGotNumber(n){
         render();
         if(checkDeath()) return;
         endTurn(`<b>${NAMES[me]}</b>の隕石が ${NAMES[tp]}の${hn(th)}手を直撃。`
-          + `<span class="sub">${before} + ${n} = ${before + n} → ${after === 0 ? "アウト" : after + "本"}（法${S.mod[tp]}・防御不可）</span>`);
+          + `<span class="sub">${before} + ${n} = ${before + n} → ${after === 0 ? "アウト" : after + "本"}（${S.mod[tp]}でアウト・防御不可）</span>`);
       });
     });
     return;
@@ -2345,7 +2348,7 @@ async function runExpand(me){
   render();
   await poof(me, 0, "拡張", "heal");
   render();
-  endTurn(`<b>${NAMES[me]}</b>が拡張。<span class="sub">上限5本・法6になった（永久）。ちょうど6でアウト、超えたら6で繰り下がる</span>`);
+  endTurn(`<b>${NAMES[me]}</b>が拡張。<span class="sub">5本まで持てるようになり、6ちょうどでアウトに変わった（永久）。6を超えたら6で割った余りに繰り下がる</span>`);
 }
 
 /* ================= 分配 ================= */
