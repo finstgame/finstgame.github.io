@@ -3,6 +3,21 @@
 <title>フィンスト — 割り箸ゲーム＋能力カード</title>
 <meta name="description" content="割り箸ゲームに能力カードを乗せた2人対戦のブラウザゲーム。リンクを開くだけで対戦できます。">
 <meta name="theme-color" content="#0D1522">
+
+<link rel="icon" href="assets/icon.svg" type="image/svg+xml">
+<link rel="apple-touch-icon" href="assets/apple-touch-icon.png">
+<link rel="canonical" href="https://yamadagenki0526icloudcom-hash.github.io/finst/">
+
+<!-- LINE などに貼ったときのプレビュー -->
+<meta property="og:type" content="website">
+<meta property="og:site_name" content="フィンスト">
+<meta property="og:title" content="フィンスト — 割り箸ゲーム＋能力カード">
+<meta property="og:description" content="リンクを開くだけで2人対戦。インストール不要のブラウザゲームです。">
+<meta property="og:url" content="https://yamadagenki0526icloudcom-hash.github.io/finst/">
+<meta property="og:image" content="https://yamadagenki0526icloudcom-hash.github.io/finst/assets/og.jpg">
+<meta property="og:image:width" content="1200">
+<meta property="og:image:height" content="630">
+<meta name="twitter:card" content="summary_large_image">
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link href="https://fonts.googleapis.com/css2?family=Dela+Gothic+One&family=Zen+Kaku+Gothic+New:wght@400;700;900&display=swap" rel="stylesheet">
@@ -766,7 +781,7 @@ const NET = {
 /* 紛らわしい文字（I L O 0 1）を除いた6文字 */
 const CODE_ALPHABET = "ABCDEFGHJKMNPQRSTUVWXYZ23456789";
 /* 同期する項目。sel / pick / step は各自の手元の操作なので送らない */
-const SYNC = ["hands","max","mod","expanded","cards","used","turn","phase","pending","over","winner","why","msg","seq"];
+const SYNC = ["hands","max","mod","expanded","cards","used","turn","phase","pending","over","winner","why","msg","hit","seq"];
 
 let sb = null;        // supabase client
 let online = false;
@@ -811,6 +826,7 @@ function newState(){
     winner: null,
     why: "",
     msg: "",
+    hit: null,                          // 直前の着弾。受信側が突き出し演出を再現するのに使う
     seq: 0
   };
 }
@@ -854,8 +870,26 @@ function applyRemote(snap){
   applying = false;
 }
 
-/* 受信側は途中経過を持たないので、手の増減から演出だけ再現する */
-function animateDiff(before){
+/* 受信側は途中経過を持たないので、state の hit と手の増減から演出を組み立てる */
+async function animateDiff(before){
+  const hit = S.hit;
+  if(hit && hit.p !== null && hit.p !== undefined){
+    const atk = document.querySelector(`.hand[data-p="${hit.p}"][data-h="${hit.h}"]`);
+    if(atk){
+      atk.classList.add(hit.p === bottomP() ? "lunge-up" : "lunge-down");
+      await wait(190);
+    }
+  }
+  if(hit){
+    const el = document.querySelector(`.hand[data-p="${hit.dp}"][data-h="${hit.dh}"]`);
+    if(el){
+      const tag = document.createElement("div");
+      tag.className = "dmg";
+      tag.textContent = "+" + hit.dmg;
+      el.appendChild(tag);
+    }
+    buzz(hit.out ? [18,60,28] : 18);
+  }
   [0,1].forEach(p => [0,1].forEach(h => {
     const b = before[p][h], a = S.hands[p][h];
     if(b === a) return;
@@ -891,6 +925,39 @@ function netStatus(ok, why){
   el.textContent = ok ? `オンライン ${room}` : `接続に問題 ${why ? "／" + why : ""}`;
 }
 
+/* スマホは画面を消すと WebSocket が切れる。復帰時・回線復帰時・購読が落ちた時に
+   必ずサーバの現在値を取り直す。取りこぼしを黙って抱えたまま遊び続けるのが一番まずい。 */
+async function resync(why){
+  if(!online || !room || !sb) return;
+  const { data, error } = await sb.from("matches").select("state").eq("room_code", room).maybeSingle();
+  if(error){ netStatus(false, error.message); return; }
+  netStatus(true);
+  if(data && data.state) applyRemote(data.state);
+  if(why === "wake" && chan && chan.state !== "joined") reconnect();
+}
+
+/* 購読ごと張り直す */
+async function reconnect(){
+  if(!online || !room) return;
+  try{ if(chan) sb.removeChannel(chan); }catch(e){}
+  chan = null;
+  await connect(room);
+  await resync("reconnect");
+}
+
+let pollId = null;
+function startNetWatch(){
+  clearInterval(pollId);
+  /* 見えている間だけ、20秒ごとの保険。Realtime が生きていれば seq で弾かれるだけで実質無害 */
+  pollId = setInterval(() => { if(document.visibilityState === "visible") resync("poll"); }, 20000);
+}
+
+document.addEventListener("visibilitychange", () => {
+  if(document.visibilityState === "visible") resync("wake");
+});
+window.addEventListener("online",  () => resync("wake"));
+window.addEventListener("offline", () => netStatus(false, "オフライン"));
+
 async function connect(code){
   room = code;
   chan = sb.channel("finst:" + code)
@@ -900,7 +967,12 @@ async function connect(code){
     .on("postgres_changes",
         { event:"UPDATE", schema:"public", table:"rooms", filter:"code=eq." + code },
         payload => { if(payload.new && payload.new.status === "playing") enterGame(); });
-  await chan.subscribe(st => netStatus(st === "SUBSCRIBED"));
+  await chan.subscribe(st => {
+    netStatus(st === "SUBSCRIBED");
+    /* 購読が落ちたら黙って諦めず、次に見えたときに張り直す */
+    if(st === "CHANNEL_ERROR" || st === "TIMED_OUT") setTimeout(() => resync("wake"), 1500);
+  });
+  startNetWatch();
 }
 
 async function createRoom(){
@@ -1107,6 +1179,12 @@ const wait  = ms => new Promise(r => setTimeout(r, ms));
 
 function say(html){ document.getElementById("log").innerHTML = html; }
 
+/* 手応え。対応していない端末では何も起きない */
+function buzz(ms){
+  if(window.matchMedia("(prefers-reduced-motion: reduce)").matches) return;
+  try{ navigator.vibrate && navigator.vibrate(ms); }catch(e){}
+}
+
 /* 受け取った本数は「受け取る側の法」で正規化する。
    ちょうど法の倍数ならアウト、超えた分は繰り下がる（§2）。 */
 const norm = (v, p) => ((v % S.mod[p]) + S.mod[p]) % S.mod[p];
@@ -1289,6 +1367,7 @@ function tap(p,h){
 /* ================= 攻撃と応答フェーズ（§4） ================= */
 function declareAttack(atk){
   if(S.pending) return;                // 解決中の攻撃を上書きしない
+  S.hit = null;
   S.pending = Object.assign({modifiers:[], chain:0}, atk);
   enterDefense();
 }
@@ -1444,6 +1523,9 @@ async function resolvePending(){
   const src = p.fromHand === null || p.fromHand === undefined ? null : {p:p.from, h:p.fromHand};
   const before = S.hands[p.to][p.toHand];
   const after = norm(before + p.damage, p.to);
+  /* 相手の端末でも突き出し→着弾を再現できるように残す */
+  S.hit = {p: src ? src.p : null, h: src ? src.h : null,
+           dp: p.to, dh: p.toHand, dmg: p.damage, out: after === 0};
   await strike(src, p.to, p.toHand, p.damage, after);
 
   const via = p.kind === "counter" ? "カウンターで返された攻撃" :
@@ -1479,6 +1561,7 @@ async function strike(src, dp, dh, dmg, after){
   tag.className = "dmg";
   tag.textContent = "+" + dmg;
   defEl.appendChild(tag);
+  buzz(after === 0 ? [18,60,28] : 18);
 
   S.hands[dp][dh] = after;
 
@@ -1542,6 +1625,7 @@ function closeCard(){
 function useCard(id){
   if(busy || S.over || S.phase !== "normal") return;
   const me = S.turn;
+  S.hit = null;
   closeCard();
 
   switch(id){
@@ -1837,6 +1921,7 @@ function openSplit(){
 function closeSplit(){ document.getElementById("split").classList.remove("open"); }
 
 function applySplit(a,b){
+  S.hit = null;
   const from = S.hands[S.turn].join("/");
   S.hands[S.turn] = [a,b];
   closeSplit();
