@@ -573,6 +573,8 @@
     margin-left:10px;
   }
   .icon-btn:hover{background:var(--panel-hi); border-color:var(--wood); color:var(--bone);}
+  .icon-btn[data-off="true"]{opacity:.4; text-decoration:line-through;}
+  #soundBtn{margin-left:8px;}
 
   .info{
     position:fixed; inset:0;
@@ -662,6 +664,7 @@
   /* 盤面の上下は「自分が下」。オンラインでは席によって入れ替える */
   .app > .top{order:0;}
   .app > .waiting-bar{order:1;}
+  .app > .gone-bar{order:1;}
   .app > .board{order:2;}
   .app > .mid{order:3;}
   .app > .step-bar{order:6;}
@@ -748,6 +751,20 @@
   }
   .waiting-bar.open{display:flex;}
 
+  /* 相手が居なくなったことを黙って隠さない */
+  .gone-bar{
+    display:none;
+    align-items:center; gap:10px; flex-wrap:wrap;
+    font-size:12.5px; line-height:1.5; color:var(--bone);
+    background:color-mix(in srgb, var(--p1) 12%, var(--panel));
+    border:2px solid color-mix(in srgb, var(--p1) 45%, transparent);
+    border-radius:var(--r);
+    padding:11px 12px;
+  }
+  .gone-bar.open{display:flex;}
+  .gone-bar span{flex:1; min-width:150px;}
+  .gone-bar button{flex:0 0 auto; padding:8px 12px; font-size:12px;}
+
   @media (prefers-reduced-motion: reduce){
     *{animation-duration:.01ms !important; animation-iteration-count:1 !important; transition-duration:.01ms !important;}
     .dots::after{animation:none; content:"・・・";}
@@ -758,10 +775,12 @@
   <div class="top">
     <div class="brand">フィンスト<span class="dot">.</span></div>
     <div class="net-tag" id="netTag"></div>
+    <button class="icon-btn" id="soundBtn" onclick="toggleSound()" aria-label="音を消す">♪</button>
     <button class="icon-btn" id="infoBtn" onclick="openInfo()" aria-label="遊び方とカード一覧">?</button>
   </div>
 
   <div class="waiting-bar" id="waitBar"></div>
+  <div class="gone-bar" id="goneBar"></div>
 
   <div class="board" id="board1"></div>
 
@@ -978,6 +997,8 @@ function applyRemote(snap){
   render();
   say(S.msg || openingMsg());
   animateDiff(before);
+  notifyTurn();
+  renderGone();
   if(S.over){ showWin(); }
   else if(S.phase === "defense" && S.pending){
     if(S.pending.responder === seat){
@@ -1011,6 +1032,7 @@ async function animateDiff(before){
       el.appendChild(tag);
     }
     buzz(hit.out ? [18,60,28] : 18);
+    if(hit.out) SFX.out(); else SFX.hit();
   }
   [0,1].forEach(p => [0,1].forEach(h => {
     const b = before[p][h], a = S.hands[p][h];
@@ -1039,6 +1061,76 @@ function startWatchdog(){
   watchdog = setTimeout(() => {
     if(online && S.phase === "defense" && S.pending && S.pending.responder !== seat) passDefense(true);
   }, ms);
+}
+
+/* ---- 相手が居るかどうか（Presence）----
+   タブを閉じられた・電池が切れた場合、state は何も変わらないので
+   「考えています」のまま永久に待つことになる。それを防ぐ。 */
+let oppHere = true, oppGoneAt = 0, goneTimer = null;
+
+function readPresence(){
+  if(!online || !chan) return;
+  let here = false;
+  try{
+    const st = chan.presenceState() || {};
+    here = Object.keys(st).some(k => k !== String(seat));
+  }catch(e){ return; }
+
+  if(here){
+    oppHere = true; oppGoneAt = 0;
+    clearTimeout(goneTimer);
+    renderGone();
+  } else if(oppHere){
+    /* 一瞬の切れ替わりで慌てない。数秒たっても戻らなければ知らせる */
+    oppHere = false;
+    oppGoneAt = Date.now();
+    clearTimeout(goneTimer);
+    goneTimer = setTimeout(renderGone, 4000);
+  }
+}
+
+function renderGone(){
+  const bar = document.getElementById("goneBar");
+  if(!bar) return;
+  const show = online && !oppHere && !S.over &&
+               !document.getElementById("lobby").classList.contains("open");
+  if(!show){ bar.classList.remove("open"); return; }
+  bar.innerHTML = `<span>${NAMES[foe(seat)]}の接続が切れています</span>
+    <button class="ghost" onclick="claimWin()">自分の勝ちにして終わる</button>`;
+  bar.classList.add("open");
+}
+
+/* 相手が戻らないとき、待ち続けずに終われるようにする */
+function claimWin(){
+  if(!online || S.over) return;
+  stopTimer(); clearTimeout(watchdog);
+  S.over = true; S.phase = "finished";
+  S.winner = seat;
+  S.why = `${NAMES[foe(seat)]}の接続が切れたため`;
+  S.msg = `<b>${NAMES[seat]}</b>の勝ち。<span class="sub">${S.why}</span>`;
+  S.pending = null; S.step = null; S.hit = null;
+  render(); showWin(); say(S.msg);
+  commit();
+}
+
+/* ---- 自分の番になったことに気づけるように ---- */
+const BASE_TITLE = document.title;
+let wasMine = false;
+
+function notifyTurn(){
+  if(!online){ return; }
+  if(S.over){ wasMine = false; document.title = BASE_TITLE; return; }
+  const mine = S.phase === "defense"
+    ? !!(S.pending && S.pending.responder === seat)
+    : S.turn === seat;
+  if(mine && !wasMine){
+    /* 応答は5秒しかないので、はっきり知らせる */
+    buzz(S.phase === "defense" ? [30,70,30] : 25);
+    SFX.turn();
+    if(document.visibilityState !== "visible") document.title = "(!) " + BASE_TITLE;
+  }
+  if(!mine || document.visibilityState === "visible") document.title = BASE_TITLE;
+  wasMine = mine;
 }
 
 function netStatus(ok, why){
@@ -1076,14 +1168,17 @@ function startNetWatch(){
 }
 
 document.addEventListener("visibilitychange", () => {
-  if(document.visibilityState === "visible") resync("wake");
+  if(document.visibilityState === "visible"){ document.title = BASE_TITLE; resync("wake"); }
 });
 window.addEventListener("online",  () => resync("wake"));
 window.addEventListener("offline", () => netStatus(false, "オフライン"));
 
 async function connect(code){
   room = code;
-  chan = sb.channel("finst:" + code)
+  chan = sb.channel("finst:" + code, { config:{ presence:{ key: String(seat) } } })
+    .on("presence", { event:"sync" },  readPresence)
+    .on("presence", { event:"join" },  readPresence)
+    .on("presence", { event:"leave" }, readPresence)
     .on("postgres_changes",
         { event:"UPDATE", schema:"public", table:"matches", filter:"room_code=eq." + code },
         payload => applyRemote(payload.new && payload.new.state))
@@ -1092,6 +1187,7 @@ async function connect(code){
         payload => { if(payload.new && payload.new.status === "playing") enterGame(); });
   await chan.subscribe(st => {
     netStatus(st === "SUBSCRIBED");
+    if(st === "SUBSCRIBED") chan.track({ seat, at: Date.now() });
     /* 購読が落ちたら黙って諦めず、次に見えたときに張り直す */
     if(st === "CHANNEL_ERROR" || st === "TIMED_OUT") setTimeout(() => resync("wake"), 1500);
   });
@@ -1164,6 +1260,9 @@ function startOffline(){
 function enterGame(){
   document.getElementById("lobby").classList.remove("open");
   document.getElementById("waitBar").classList.remove("open");
+  wasMine = false;
+  notifyTurn();
+  readPresence();
   netStatus(true);
   busy = false;
   render();
@@ -1236,7 +1335,11 @@ async function shareLink(){
 }
 
 function leaveRoom(){
-  if(chan) { try{ sb.removeChannel(chan); }catch(e){} chan = null; }
+  if(chan) { try{ chan.untrack(); }catch(e){} try{ sb.removeChannel(chan); }catch(e){} chan = null; }
+  clearTimeout(goneTimer);
+  oppHere = true; wasMine = false;
+  document.title = BASE_TITLE;
+  document.getElementById("goneBar").classList.remove("open");
   online = false; room = null;
   location.hash = "";
   showLobby();
@@ -1413,6 +1516,117 @@ function buzz(ms){
   try{ navigator.vibrate && navigator.vibrate(ms); }catch(e){}
 }
 
+/* ================= 効果音 =================
+   音声ファイルは持たず、その場で合成する。割り箸を叩く音が芯。
+   ブラウザの制限で最初の操作までは鳴らせないので、初回のタップで起こす。 */
+const SFX = (() => {
+  let ctx = null, noise = null;
+  let on = true;
+  try{ on = localStorage.getItem("finst_sound") !== "off"; }catch(e){}
+
+  function ac(){
+    if(!ctx){
+      const C = window.AudioContext || window.webkitAudioContext;
+      if(!C) return null;
+      try{ ctx = new C(); }catch(e){ return null; }
+    }
+    if(ctx.state === "suspended") ctx.resume();
+    return ctx;
+  }
+  function noiseBuf(){
+    if(noise) return noise;
+    const n = Math.floor(ctx.sampleRate * 0.25);
+    noise = ctx.createBuffer(1, n, ctx.sampleRate);
+    const d = noise.getChannelData(0);
+    for(let i=0;i<n;i++) d[i] = Math.random()*2 - 1;
+    return noise;
+  }
+  /* 減衰する包絡線をつないで鳴らす */
+  function play(src, at, attack, decay, peak, dest){
+    const g = ctx.createGain();
+    g.gain.setValueAtTime(0.0001, at);
+    g.gain.exponentialRampToValueAtTime(peak, at + attack);
+    g.gain.exponentialRampToValueAtTime(0.0001, at + attack + decay);
+    src.connect(g); g.connect(dest || ctx.destination);
+    src.start(at); src.stop(at + attack + decay + 0.02);
+  }
+  function tone(freq, at, dur, peak, type){
+    const o = ctx.createOscillator();
+    o.type = type || "sine";
+    o.frequency.setValueAtTime(freq, at);
+    play(o, at, 0.005, dur, peak);
+  }
+  /* 木を叩いた音：帯域を絞ったノイズ＋低い正弦 */
+  function knock(freq, at, dur, peak){
+    const s = ctx.createBufferSource(); s.buffer = noiseBuf();
+    const bp = ctx.createBiquadFilter();
+    bp.type = "bandpass"; bp.frequency.setValueAtTime(freq * 5, at); bp.Q.value = 1.4;
+    const g = ctx.createGain();
+    g.gain.setValueAtTime(0.0001, at);
+    g.gain.exponentialRampToValueAtTime(peak, at + 0.004);
+    g.gain.exponentialRampToValueAtTime(0.0001, at + dur);
+    s.connect(bp); bp.connect(g); g.connect(ctx.destination);
+    s.start(at); s.stop(at + dur + 0.02);
+    tone(freq, at, dur * 0.9, peak * 0.7);
+  }
+
+  const api = {
+    get enabled(){ return on; },
+    toggle(){
+      on = !on;
+      try{ localStorage.setItem("finst_sound", on ? "on" : "off"); }catch(e){}
+      if(on){ api.wake(); api.tap(); }
+      return on;
+    },
+    wake(){ if(on) ac(); },
+
+    tap(){   if(!on || !ac()) return; knock(320, ctx.currentTime, 0.05, 0.16); },
+    card(){  if(!on || !ac()) return;
+             const t = ctx.currentTime;
+             const s = ctx.createBufferSource(); s.buffer = noiseBuf();
+             const hp = ctx.createBiquadFilter(); hp.type = "highpass"; hp.frequency.value = 900;
+             const g = ctx.createGain();
+             g.gain.setValueAtTime(0.0001, t);
+             g.gain.exponentialRampToValueAtTime(0.12, t + 0.02);
+             g.gain.exponentialRampToValueAtTime(0.0001, t + 0.16);
+             s.connect(hp); hp.connect(g); g.connect(ctx.destination);
+             s.start(t); s.stop(t + 0.2); },
+    hit(){   if(!on || !ac()) return; knock(190, ctx.currentTime, 0.10, 0.30); },
+    /* アウト：折れて落ちるので、続けて2回、下がりながら */
+    out(){   if(!on || !ac()) return;
+             const t = ctx.currentTime;
+             knock(210, t, 0.09, 0.30);
+             knock(140, t + 0.075, 0.16, 0.26);
+             tone(90, t + 0.09, 0.28, 0.10, "triangle"); },
+    heal(){  if(!on || !ac()) return;
+             const t = ctx.currentTime;
+             tone(520, t, 0.12, 0.10); tone(780, t + 0.07, 0.16, 0.09); },
+    turn(){  if(!on || !ac()) return;
+             const t = ctx.currentTime;
+             tone(660, t, 0.11, 0.12); tone(880, t + 0.10, 0.18, 0.11); },
+    /* 応答フェーズの残り2秒 */
+    tick(){  if(!on || !ac()) return; tone(1250, ctx.currentTime, 0.05, 0.06, "square"); },
+    win(){   if(!on || !ac()) return;
+             const t = ctx.currentTime;
+             [523, 659, 784, 1046].forEach((f,i) => tone(f, t + i*0.09, 0.22, 0.11)); },
+    lose(){  if(!on || !ac()) return;
+             const t = ctx.currentTime;
+             [392, 330, 262].forEach((f,i) => tone(f, t + i*0.11, 0.28, 0.10, "triangle")); }
+  };
+  return api;
+})();
+
+/* 最初の操作で音を起こす（ブラウザの自動再生制限） */
+document.addEventListener("pointerdown", () => SFX.wake(), { once:true });
+
+function toggleSound(){
+  const el = document.getElementById("soundBtn");
+  const on = SFX.toggle();
+  el.textContent = on ? "♪" : "♪";
+  el.dataset.off = String(!on);
+  el.setAttribute("aria-label", on ? "音を消す" : "音を出す");
+}
+
 /* 受け取った本数は「受け取る側の法」で正規化する。
    ちょうど法の倍数ならアウト、超えた分は繰り下がる（§2）。 */
 const norm = (v, p) => ((v % S.mod[p]) + S.mod[p]) % S.mod[p];
@@ -1570,6 +1784,7 @@ function tap(p,h){
   if(p === S.turn){
     if(!alive(p,h)) return;
     S.sel = (S.sel && S.sel[1] === h) ? null : [p,h];
+    if(S.sel) SFX.tap();
     closeAllPanels();
     render();
     if(S.sel) say(`<b>${NAMES[p]}</b>が${hn(h)}手（${S.hands[p][h]}本）をかまえた。<span class="sub">相手の手をタップして攻撃</span>`);
@@ -1678,6 +1893,7 @@ function startTimer(){
   stopTimer();
   const stick = document.getElementById("timerStick");
   const secs = document.getElementById("sheetSecs");
+  let lastSec = null;
   const tick = () => {
     if(!S.pending || S.phase !== "defense") return stopTimer();
     const left = S.pending.deadline - Date.now();
@@ -1687,6 +1903,7 @@ function startTimer(){
     secs.textContent = s + "秒";
     stick.classList.toggle("low", s <= 2);
     secs.classList.toggle("low", s <= 2);
+    if(s !== lastSec){ lastSec = s; if(s <= 2 && s > 0) SFX.tick(); }
     if(left <= 0){ stopTimer(); passDefense(true); }
   };
   tick();
@@ -1790,6 +2007,7 @@ async function strike(src, dp, dh, dmg, after){
   tag.textContent = "+" + dmg;
   defEl.appendChild(tag);
   buzz(after === 0 ? [18,60,28] : 18);
+  if(after === 0) SFX.out(); else SFX.hit();
 
   S.hands[dp][dh] = after;
 
@@ -1809,7 +2027,7 @@ async function poof(p, h, label, kind){
   const el = document.querySelector(`.hand[data-p="${p}"][data-h="${h}"]`);
   if(!el) return;
   const f = el.querySelector(".flash");
-  if(kind === "heal") f.classList.add("heal");
+  if(kind === "heal"){ f.classList.add("heal"); SFX.heal(); }
   f.classList.add("go");
   const tag = document.createElement("div");
   tag.className = "dmg " + (kind === "heal" ? "up" : kind === "nul" ? "nul" : "");
@@ -1879,6 +2097,7 @@ function consume(p, id){
 /* 消費のアニメーションを挟んでから消す */
 async function spend(p, id){
   const el = document.querySelector(`.board .card[data-id="${id}"]`);
+  SFX.card();
   if(el && p === S.turn){ el.classList.add("spent"); await wait(340); }
   consume(p, id);
 }
@@ -2215,6 +2434,7 @@ function showWin(){
   document.getElementById("winWhy").textContent = S.why || "両手ともアウトで決着";
   document.getElementById("winAgain").textContent = online ? "もう一戦" : "最初から";
   document.getElementById("win").classList.add("open");
+  if(!online || w === seat) SFX.win(); else SFX.lose();
 }
 
 boot();
