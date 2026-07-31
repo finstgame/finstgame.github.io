@@ -555,7 +555,8 @@
     line-height:1.25;
   }
   .win .why{font-size:13px; color:var(--dim); text-align:center; line-height:1.5;}
-  .win button{max-width:260px;}
+  /* 縦並びなので、共通の flex:1 で縦に伸びないようにする */
+  .win button{flex:0 0 auto; width:100%; max-width:260px;}
 
   /* ---------- 遊び方 / カード一覧 ---------- */
   .icon-btn{
@@ -823,7 +824,7 @@
   <h2 id="confirmText"></h2>
   <div class="why" id="confirmWhy"></div>
   <button class="primary" id="confirmYes"></button>
-  <button class="ghost" style="max-width:260px;width:100%" onclick="closeConfirm()">戻る</button>
+  <button class="ghost" onclick="closeConfirm()">戻る</button>
 </div>
 
 <!-- ロビー（部屋を作る / コードで参加 / 1台で遊ぶ） -->
@@ -848,7 +849,7 @@
   <h2 id="winText"></h2>
   <div class="why" id="winWhy"></div>
   <button class="primary" id="winAgain" onclick="restart()">もう一戦</button>
-  <button class="ghost" style="max-width:260px;width:100%" onclick="toLobby()">ロビーに戻る</button>
+  <button class="ghost" onclick="toLobby()">ロビーに戻る</button>
 </div>
 
 <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2.58.0/dist/umd/supabase.min.js"></script>
