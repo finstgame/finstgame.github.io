@@ -2428,6 +2428,11 @@ function finish(winner, why){
 function showWin(){
   const w = S.winner;
   if(w === null || w === undefined) return;
+  /* 決着したら、手番の呼び出しも切断の警告も引っ込める */
+  document.title = BASE_TITLE;
+  wasMine = false;
+  clearTimeout(goneTimer);
+  renderGone();
   document.documentElement.style.setProperty("--turn-c", col(w));
   document.getElementById("winText").innerHTML =
     (online ? (w === seat ? "あなた" : NAMES[w]) : NAMES[w]) + "<br>の勝ち";
