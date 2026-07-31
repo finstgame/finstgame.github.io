@@ -64,14 +64,16 @@
   /* ---------- header ---------- */
   .top{
     display:flex;
-    align-items:baseline;
-    justify-content:space-between;
+    align-items:center;
+    gap:6px;
     padding:2px 4px;
   }
   .brand{
     font-family:"Dela Gothic One", sans-serif;
     font-size:clamp(20px, 6vw, 26px);
     letter-spacing:.04em;
+    white-space:nowrap;
+    flex:0 0 auto;
   }
   .brand .dot{color:var(--wood);}
   .phase-tag{
@@ -727,6 +729,8 @@
   .net-tag{
     font-size:10px; letter-spacing:.1em; color:var(--dim);
     display:flex; align-items:center; gap:5px;
+    min-width:0; margin-left:auto;
+    white-space:nowrap; overflow:hidden; text-overflow:ellipsis;
   }
   .net-tag::before{
     content:""; width:7px; height:7px; border-radius:50%;
@@ -1137,7 +1141,8 @@ function netStatus(ok, why){
   const el = document.getElementById("netTag");
   if(!online){ el.textContent = "1台で対戦"; el.removeAttribute("data-on"); return; }
   el.dataset.on = String(!!ok);
-  el.textContent = ok ? `オンライン ${room}` : `接続に問題 ${why ? "／" + why : ""}`;
+  el.textContent = ok ? room : (why ? "接続に問題 ／ " + why : "接続に問題");
+  el.title = ok ? `オンライン ${room}` : (why || "接続に問題");
 }
 
 /* スマホは画面を消すと WebSocket が切れる。復帰時・回線復帰時・購読が落ちた時に
