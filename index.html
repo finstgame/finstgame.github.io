@@ -980,8 +980,14 @@ function applyRemote(snap){
   animateDiff(before);
   if(S.over){ showWin(); }
   else if(S.phase === "defense" && S.pending){
-    if(S.pending.responder === seat) openSheet();
-    else startWatchdog();
+    if(S.pending.responder === seat){
+      /* 攻撃の書き込みが届くまでの往復（実測 約1秒）で猶予が削られる。
+         5秒しかないと2割が消えるので、受け取った側は自分に届いた時点から数え直す。
+         攻撃側は state の締切＋余裕で見張るので、早すぎる自動パスにはならない。 */
+      const left = S.pending.deadline - Date.now();
+      if(left < RESPONSE_MS) S.pending.deadline = Date.now() + RESPONSE_MS;
+      openSheet();
+    } else startWatchdog();
   }
   applying = false;
 }
@@ -1025,11 +1031,11 @@ async function animateDiff(before){
   }));
 }
 
-/* 応答側の端末が落ちた場合に、攻撃側の端末が締切+2秒で肩代わりする。
-   窓が5秒に縮んだので、待たせる時間も詰めてある。 */
+/* 応答側の端末が落ちた場合に、攻撃側の端末が肩代わりする。
+   応答側は受信時点から数え直すので、その往復ぶんを見込んで余裕を持たせる。 */
 function startWatchdog(){
   clearTimeout(watchdog);
-  const ms = Math.max(600, (S.pending.deadline - Date.now()) + 2000);
+  const ms = Math.max(600, (S.pending.deadline - Date.now()) + 3000);
   watchdog = setTimeout(() => {
     if(online && S.phase === "defense" && S.pending && S.pending.responder !== seat) passDefense(true);
   }, ms);
