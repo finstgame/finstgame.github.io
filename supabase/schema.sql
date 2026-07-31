@@ -66,8 +66,10 @@ create policy matches_anon_all on matches
   for all to anon using (true) with check (true);
 
 -- ---- 後片付け ------------------------------------------------------------
--- 無料枠を圧迫しないよう、古い部屋を落とす。
--- Supabase の Cron（pg_cron）から1日1回呼ぶ想定。
+-- 1部屋あたり約300バイトなので容量が逼迫することはないが、放っておくと誰も片付けない。
+-- 実際の掃除は index.html の purgeOldRooms() が「部屋を作るついで」に行っている
+-- （cron を用意せずに済ませるため）。この関数は pg_cron を使いたくなったとき用。
+--   select cron.schedule('finst-purge', '0 4 * * *', 'select purge_old_rooms()');
 create or replace function purge_old_rooms()
 returns void language sql as $$
   delete from rooms where created_at < now() - interval '2 days';

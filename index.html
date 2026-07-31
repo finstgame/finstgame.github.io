@@ -1199,12 +1199,28 @@ async function connect(code){
   startNetWatch();
 }
 
+/* 古い部屋を落とす。cron を用意せずに済むよう、部屋を作るついでに掃除する。
+   容量が逼迫するわけではないが、放っておくと誰も片付けない。 */
+function purgeOldRooms(){
+  const cutoff = new Date(Date.now() - 2 * 24 * 60 * 60 * 1000).toISOString();
+  try{ sb.from("rooms").delete().lt("created_at", cutoff).then(() => {}, () => {}); }catch(e){}
+}
+
 async function createRoom(){
   lobbyError("");
-  const code = newCode();
+  purgeOldRooms();
+
   const st = newState();
-  const { error: e1 } = await sb.from("rooms").insert({ code, status:"waiting", host_id: myId });
-  if(e1) return lobbyError(explain(e1));
+  /* 6文字は約8億9千万通りなので当たらないが、当たったときに黙って落ちないようにする */
+  let code = null;
+  for(let i = 0; i < 5; i++){
+    const c = newCode();
+    const { error } = await sb.from("rooms").insert({ code: c, status:"waiting", host_id: myId });
+    if(!error){ code = c; break; }
+    if(!/duplicate key|already exists/i.test(error.message || "")) return lobbyError(explain(error));
+  }
+  if(!code) return lobbyError("部屋を作れませんでした。もう一度お試しください");
+
   const { error: e2 } = await sb.from("matches").insert({ room_code: code, state: st });
   if(e2) return lobbyError(explain(e2));
 
