@@ -1,7 +1,7 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
-<title>フィンスト — 割り箸ゲーム＋能力カード</title>
-<meta name="description" content="割り箸ゲームに能力カードを乗せた2人対戦のブラウザゲーム。リンクを開くだけで対戦できます。">
+<title>フィンスト</title>
+<meta name="description" content="相手の両手をアウトにしたら勝ち。リンクを開くだけで遊べる2人対戦のブラウザゲームです。">
 <meta name="theme-color" content="#0D1522">
 
 <link rel="icon" href="assets/icon.svg" type="image/svg+xml">
@@ -11,7 +11,7 @@
 <!-- LINE などに貼ったときのプレビュー -->
 <meta property="og:type" content="website">
 <meta property="og:site_name" content="フィンスト">
-<meta property="og:title" content="フィンスト — 割り箸ゲーム＋能力カード">
+<meta property="og:title" content="フィンスト">
 <meta property="og:description" content="リンクを開くだけで2人対戦。インストール不要のブラウザゲームです。">
 <meta property="og:url" content="https://finstgame.github.io/">
 <meta property="og:image" content="https://finstgame.github.io/assets/og.jpg">
@@ -1315,11 +1315,10 @@ function showLobby(mode){
 
   el.innerHTML = `
     <div class="brand">フィンスト<span class="dot">.</span></div>
-    <div class="tag">割り箸ゲーム ＋ 能力カード</div>
+    <div class="tag">2人対戦・能力カードあり</div>
     <div class="lobby-about">
-      指で遊ぶ「割り箸ゲーム」に能力カードを乗せた2人対戦です。
       自分の手で相手の手をタップして本数を押しつけ、<b>相手の両手をアウトにしたら勝ち</b>。
-      1試合はだいたい3〜5分です。
+      1試合3〜5分。
     </div>
     <button class="ghost" style="width:100%" onclick="openInfo()">遊び方とカード一覧を見る</button>
     <h3>オンラインで対戦する</h3>
@@ -1386,32 +1385,31 @@ function boot(){
 /* ================= 遊び方とカード一覧 ================= */
 function openInfo(){
   document.getElementById("infoBody").innerHTML = `
-    <h4>フィンストとは</h4>
-    <p>指で遊ぶ「割り箸ゲーム」に、能力カードを乗せた2人対戦です。
-       <span class="em">相手の両手をアウトにしたら勝ち</span>。
-       競技バランスよりカオス重視で作ってあります。</p>
+    <h4>勝ち負け</h4>
+    <p>おたがい <b>左手1本 / 右手1本</b> ではじまり、
+       <span class="em">相手の両手をアウトにしたら勝ち</span>。</p>
 
-    <h4>基本ルール</h4>
+    <h4>本数とアウト</h4>
     <ul>
-      <li>おたがい <b>左手1本 / 右手1本</b> ではじまります</li>
-      <li>自分の生きている手で相手の生きている手をタップすると、<b>自分の本数が相手に足される</b></li>
-      <li><b>ちょうど5になった手はアウト</b>。5を超えたら5で割った余りに繰り下がる
-          （例：3本の手に4ダメージ → 7 → <b>2本</b>で生存）</li>
-      <li>自分の番にできるのは <span class="em">タッチ・分配・カード1枚</span> のどれか1つだけ</li>
-      <li>分配は両手の合計を組み替えます。<b>アウトの手も復活できます</b>。
-          ただし同じ配分に戻すだけ・左右を入れ替えるだけは禁止</li>
-      <li>両手ともアウトになったら負け</li>
+      <li><b>ちょうど5になった手はアウト</b></li>
+      <li>5を超えたら、5で割った余りに繰り下がる（3本の手に4 → 7 → <b>2本</b>）</li>
+      <li>両手ともアウトで負け</li>
+    </ul>
+
+    <h4>自分の番にできること（どれか1つ）</h4>
+    <ul>
+      <li><span class="em">タッチ</span> … 自分の手で相手の手をタップ。自分の本数が相手に足される</li>
+      <li><span class="em">分配</span> … 両手の合計を組み替える。0の手も復活できる。
+          同じ配分・左右の入れ替えだけは不可</li>
+      <li><span class="em">カード</span> … 手札から1枚使う</li>
     </ul>
 
     <h4>能力カード</h4>
     <ul>
-      <li>10種から <b>ランダムに3枚</b> 配られます</li>
-      <li>各カードは <b>1回だけ</b>。使ったら消えて、補充はありません</li>
-      <li>終盤は自然と、素の割り箸ゲームに戻ります</li>
-      <li><b>相手の手札は見えません</b>（枚数だけ分かります）</li>
-      <li>「防御割り込み」のカードは、<b>相手に攻撃されたとき</b>に使います。
-          15秒以内に選ばないと自動でパスになります</li>
-      <li><b>拡張</b>を使ったプレイヤーだけ、上限が5本・アウトになる値が6に変わります</li>
+      <li>10種から3枚。<b>各1回きり</b>で補充なし</li>
+      <li><b>相手の手札は見えない</b>（枚数だけ分かる）</li>
+      <li>「防御割り込み」は<b>相手に攻撃されたとき</b>に使う。15秒で自動パス</li>
+      <li><b>拡張</b>を使うと、その人だけ上限5本・アウトは6になる</li>
     </ul>
 
     <h4>カード一覧</h4>
@@ -1428,11 +1426,11 @@ function openInfo(){
       }).join("")}
     </div>
 
-    <h4>オンライン対戦について</h4>
+    <h4>オンライン</h4>
     <ul>
-      <li>部屋を作って<b>6文字のコード</b>を相手に送るか、リンクを開いてもらえば始まります</li>
-      <li>途中で閉じても、同じ端末で開き直せば<b>同じ対戦に戻れます</b></li>
-      <li>やめたいときは下の「やめる」から。対戦中にやめると<b>投了扱い</b>になります</li>
+      <li><b>6文字のコード</b>かリンクで合流</li>
+      <li>閉じても、同じ端末で開き直せば戻れる</li>
+      <li>「やめる」は対戦中だと<b>投了扱い</b></li>
     </ul>`;
   document.getElementById("info").classList.add("open");
   document.getElementById("info").scrollTop = 0;
@@ -1753,7 +1751,7 @@ function handHTML(p,h){
 function cardsHTML(p){
   const hand = S.cards[p];
   if(hand.length === 0){
-    return `<div class="hand-row" data-empty="true">手札なし — 素の割り箸ゲーム</div>`;
+    return `<div class="hand-row" data-empty="true">手札なし</div>`;
   }
 
   const faceUp = online ? p === seat : (p === S.turn && !S.over);
