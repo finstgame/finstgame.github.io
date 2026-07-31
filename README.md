@@ -2,7 +2,7 @@
 
 指を使う対戦ゲーム「割り箸ゲーム（Chopsticks）」に能力カードを乗せた、2人対戦のブラウザゲーム。
 
-**遊ぶ**: https://yamadagenki0526icloudcom-hash.github.io/finst/
+**遊ぶ**: https://finstgame.github.io/
 
 - 部屋を作って6文字のコードを相手に送るか、リンクを開いてもらえば始まります
 - 1台を回して遊ぶモードもあります
