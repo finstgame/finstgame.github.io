@@ -624,8 +624,26 @@
     width:6px; height:2px; border-radius:1px; background:var(--wood);
   }
   .info-body b{color:var(--wood);}
+  .info-body .sub2{display:block; color:var(--dim); font-size:11.5px; margin-top:4px;}
   .info-body .em{color:var(--bone); font-weight:700;}
 
+  .lobby-links{display:flex; gap:8px;}
+  .seg{display:flex; gap:8px;}
+  .seg-btn{
+    flex:1; display:flex; flex-direction:column; gap:3px;
+    padding:11px 8px; line-height:1.25;
+  }
+  .seg-btn .sname{font-weight:900; font-size:14px;}
+  .seg-btn small{font-size:10.5px; color:var(--dim); letter-spacing:.02em;}
+  .seg-btn[data-on="true"]{
+    background:var(--wood); border-color:var(--wood); color:#0D1522;
+  }
+  .seg-btn[data-on="true"] small{color:color-mix(in srgb, #0D1522 62%, transparent);}
+  .lobby-links button{flex:1;}
+  .cards-note{
+    font-size:11.5px; line-height:1.7; color:var(--dim);
+    margin-top:14px;
+  }
   .clist{display:flex; flex-direction:column; gap:8px;}
   .crow{
     display:grid;
@@ -783,6 +801,7 @@
     <div class="brand">フィンスト<span class="dot">.</span></div>
     <div class="net-tag" id="netTag"></div>
     <button class="icon-btn" id="soundBtn" onclick="toggleSound()" aria-label="音を消す">♪</button>
+    <button class="icon-btn" id="cardsBtn" onclick="openCards()" aria-label="カード一覧">カ</button>
     <button class="icon-btn" id="infoBtn" onclick="openInfo()" aria-label="遊び方とカード一覧">?</button>
   </div>
 
@@ -834,7 +853,7 @@
   </div>
 </div>
 
-<!-- 遊び方とカード一覧 -->
+<!-- 遊び方 -->
 <div class="info" id="info">
   <div class="info-inner">
     <div class="info-head">
@@ -842,6 +861,17 @@
       <button class="icon-btn" onclick="closeInfo()" aria-label="閉じる">×</button>
     </div>
     <div class="info-body" id="infoBody"></div>
+  </div>
+</div>
+
+<!-- カード一覧（対戦中でもここから開ける） -->
+<div class="info" id="cards">
+  <div class="info-inner">
+    <div class="info-head">
+      <span class="info-title">カード一覧</span>
+      <button class="icon-btn" onclick="closeCards()" aria-label="閉じる">×</button>
+    </div>
+    <div class="info-body" id="cardsBody"></div>
   </div>
 </div>
 
@@ -923,7 +953,24 @@ const NET = {
 /* 紛らわしい文字（I L O 0 1）を除いた6文字 */
 const CODE_ALPHABET = "ABCDEFGHJKMNPQRSTUVWXYZ23456789";
 /* 同期する項目。sel / pick / step は各自の手元の操作なので送らない */
-const SYNC = ["hands","max","mod","expanded","cards","used","turn","phase","pending","over","winner","why","msg","hit","seq"];
+const SYNC = ["hands","max","outAt","expanded","mode","cards","used","turn","phase","pending","over","winner","why","msg","hit","seq"];
+
+/* アウトの条件。部屋を作った側が決め、相手はそれを受け取る。
+   quick … その数以上でアウト（手が落ちやすく、決着が早い）
+   deep  … その数ちょうどでアウト。超えたぶんは割った余りに繰り下がる（粘れて読み合いが深い） */
+const MODES = {
+  quick: { name:"クイック", rule:"以上でアウト" },
+  deep:  { name:"ディープ", rule:"ちょうどでアウト" }
+};
+let ruleMode = "quick";
+try{ if(MODES[localStorage.getItem("finst_mode")]) ruleMode = localStorage.getItem("finst_mode"); }catch(e){}
+function setMode(m){
+  if(!MODES[m]) return;
+  ruleMode = m;
+  try{ localStorage.setItem("finst_mode", m); }catch(e){}
+  SFX.tap();
+  showLobby();
+}
 
 let sb = null;        // supabase client
 let online = false;
@@ -957,7 +1004,8 @@ function newState(){
   return {
     hands: [[1,1],[1,1]],
     max:   [4,4],                        // 拡張で 5
-    mod:   [5,5],                        // 拡張で 6
+    mode:  ruleMode,                     // quick | deep
+    outAt: [5,5],                        // アウトの基準。拡張で 6
     expanded: [false,false],
     cards: [deal(), deal()],
     used:  [[],[]],
@@ -976,7 +1024,8 @@ function newState(){
 function snapshot(){ const o = {}; SYNC.forEach(k => o[k] = S[k]); return o; }
 
 function openingMsg(){
-  return `<b>${NAMES[S.turn]}</b>の先攻ではじまります。<span class="sub">能力カードを3枚ずつ配りました。自分の手を選んで相手の手をタップ</span>`;
+  return `<b>${NAMES[S.turn]}</b>の先攻ではじまります。`
+    + `<span class="sub">${modeName()}モード（${outDesc(0)}）／カードは3枚ずつ。自分の手を選んで相手の手をタップ</span>`;
 }
 
 /* 状態が確定した所（手番交代・応答フェーズ開始・決着）で呼ぶ */
@@ -1310,6 +1359,7 @@ function showLobby(mode){
       <button class="primary" id="shareBtn">リンクをコピーして送る</button>
       <div class="lobby-note">相手がこのコードを入力するか、コピーしたリンクを開くと始まります。<span class="dots">待機中</span></div>
       <button class="ghost" style="width:100%" onclick="openInfo()">待つあいだに遊び方を読む</button>
+      <button class="ghost" style="width:100%" onclick="openCards()">カード一覧を見る</button>
       <button class="ghost" onclick="leaveRoom()">やめる</button>
       <div class="lobby-err" id="lobbyErr"></div>`;
     document.getElementById("shareBtn").onclick = shareLink;
@@ -1323,7 +1373,23 @@ function showLobby(mode){
       自分の手で相手の手をタップして本数を押しつけ、<b>相手の両手をアウトにしたら勝ち</b>。
       1試合3〜5分。
     </div>
-    <button class="ghost" style="width:100%" onclick="openInfo()">遊び方とカード一覧を見る</button>
+    <div class="lobby-links">
+      <button class="ghost" onclick="openInfo()">遊び方</button>
+      <button class="ghost" onclick="openCards()">カード一覧</button>
+    </div>
+
+    <h3>モード</h3>
+    <div class="seg">
+      ${Object.keys(MODES).map(k => `
+        <button class="seg-btn" data-on="${ruleMode === k}" onclick="setMode('${k}')">
+          <span class="sname">${MODES[k].name}</span>
+          <small>5${MODES[k].rule}</small>
+        </button>`).join("")}
+    </div>
+    <div class="lobby-note">${ruleMode === "deep"
+      ? "5ちょうどでアウト。超えたぶんは5で割った余りに繰り下がるので、手が粘って試合が長くなります（3本の手に4ダメージ → 7 → 2本）。"
+      : "5以上になった手はそのままアウト。決着が早くつきます。"}</div>
+
     <h3>オンラインで対戦する</h3>
     <button class="primary" onclick="createRoom()">部屋を作る</button>
     <div class="join-row">
@@ -1388,14 +1454,22 @@ function boot(){
 /* ================= 遊び方とカード一覧 ================= */
 function openInfo(){
   document.getElementById("infoBody").innerHTML = `
+    <h4>いまのモード</h4>
+    <p><span class="em">${modeName()}モード</span> ─ ${S.mode === "deep"
+      ? "5ちょうどでアウト。超えたぶんは繰り下がるので粘れます。"
+      : "5以上でアウト。決着が早くつきます。"}
+      <span class="sub2">モードは部屋を作るときに選べます。</span></p>
+
     <h4>勝ち負け</h4>
     <p>おたがい <b>左手1本 / 右手1本</b> ではじまり、
        <span class="em">相手の両手をアウトにしたら勝ち</span>。</p>
 
     <h4>本数とアウト</h4>
     <ul>
-      <li><b>ちょうど5になった手はアウト</b></li>
-      <li>5を超えたら、5で割った余りに繰り下がる（3本の手に4 → 7 → <b>2本</b>）</li>
+      ${S.mode === "deep"
+        ? `<li><b>ちょうど5になった手はアウト</b></li>
+           <li>5を超えたら、5で割った余りに繰り下がる（3本の手に4ダメージ → 7 → <b>2本</b>）</li>`
+        : `<li><b>5以上になった手はアウト</b>（3本の手に2ダメージで <b>アウト</b>）</li>`}
       <li>両手ともアウトで負け</li>
     </ul>
 
@@ -1415,7 +1489,22 @@ function openInfo(){
       <li><b>拡張</b>を使うと、<b>その人だけ5でアウトが6でアウト</b>に変わる。5本の手を持てるようになる</li>
     </ul>
 
-    <h4>カード一覧</h4>
+    <h4>オンライン</h4>
+    <ul>
+      <li><b>6文字のコード</b>かリンクで合流</li>
+      <li>閉じても、同じ端末で開き直せば戻れる</li>
+      <li>「やめる」は対戦中だと<b>投了扱い</b></li>
+    </ul>
+    <button class="ghost" style="width:100%;margin-top:18px" onclick="openCards()">カード一覧を見る</button>`;
+  document.getElementById("info").classList.add("open");
+  document.getElementById("info").scrollTop = 0;
+}
+function closeInfo(){ document.getElementById("info").classList.remove("open"); }
+
+/* カードの効果は対戦中に一番よく見たいので、遊び方とは別の画面にしてある */
+function openCards(){
+  closeInfo();
+  document.getElementById("cardsBody").innerHTML = `
     <div class="clist">
       ${Object.keys(CARDS).map(Number).map(id => {
         const c = CARDS[id];
@@ -1428,17 +1517,13 @@ function openInfo(){
         </div>`;
       }).join("")}
     </div>
-
-    <h4>オンライン</h4>
-    <ul>
-      <li><b>6文字のコード</b>かリンクで合流</li>
-      <li>閉じても、同じ端末で開き直せば戻れる</li>
-      <li>「やめる」は対戦中だと<b>投了扱い</b></li>
-    </ul>`;
-  document.getElementById("info").classList.add("open");
-  document.getElementById("info").scrollTop = 0;
+    <p class="cards-note">10種から3枚が配られます。各1回きりで補充なし。
+       「防御割り込み」は相手に攻撃されたときに使い、15秒で自動パスになります。</p>`;
+  const el = document.getElementById("cards");
+  el.classList.add("open");
+  el.scrollTop = 0;
 }
-function closeInfo(){ document.getElementById("info").classList.remove("open"); }
+function closeCards(){ document.getElementById("cards").classList.remove("open"); }
 
 /* ================= 終わり方 ================= */
 function closeConfirm(){ document.getElementById("confirm").classList.remove("open"); }
@@ -1649,9 +1734,14 @@ function toggleSound(){
   el.setAttribute("aria-label", on ? "音を消す" : "音を出す");
 }
 
-/* 受け取った本数は「受け取る側の法」で正規化する。
-   ちょうど法の倍数ならアウト、超えた分は繰り下がる（§2）。 */
-const norm = (v, p) => ((v % S.mod[p]) + S.mod[p]) % S.mod[p];
+/* 受け取る側の基準で判定する。0 になった手はアウト。 */
+const norm = (v, p) => S.mode === "deep"
+  ? ((v % S.outAt[p]) + S.outAt[p]) % S.outAt[p]   // ちょうどでアウト、超えたら繰り下がる
+  : (v >= S.outAt[p] ? 0 : v);                     // その数以上でアウト
+
+/* 画面に出す言い方（例: 「5以上でアウト」「5ちょうどでアウト」）*/
+const outDesc = p => S.outAt[p] + (S.mode === "deep" ? "ちょうどでアウト" : "以上でアウト");
+const modeName = () => (MODES[S.mode] || MODES.quick).name;
 
 /* ================= 描画 ================= */
 /* 自分の盤が下。オンラインでは席によって上下が入れ替わる */
@@ -1678,7 +1768,7 @@ function render(){
       <div class="board-head">
         <span class="pip"></span>
         <span class="pname">${NAMES[p]}</span>
-        ${S.expanded[p] ? `<span class="exp">6でアウト</span>` : ""}
+        ${S.expanded[p] ? `<span class="exp">${outDesc(p)}</span>` : ""}
         <span class="ptag">${S.turn === p && !S.over ? "手番" : ""}</span>
       </div>
       <div class="hands">${[0,1].map(h => handHTML(p,h)).join("")}</div>
@@ -1877,7 +1967,7 @@ function attackDesc(p){
   const after = norm(before + p.damage, p.to);
   const fate = after === 0 ? "アウト" : `${after}本`;
   return `${NAMES[p.from]}の${via}。<b>${p.damage}ダメージ</b>が${NAMES[p.to]}の${hn(p.toHand)}手へ。
-    <span class="sub">このまま通ると ${before} + ${p.damage} = ${before + p.damage} → ${fate}（${S.mod[p.to]}ちょうどでアウト）</span>`;
+    <span class="sub">このまま通ると ${before} + ${p.damage} = ${before + p.damage} → ${fate}（${outDesc(p.to)}）</span>`;
 }
 
 function renderSheetBody(){
@@ -2002,7 +2092,8 @@ async function resolvePending(){
     ? `<b>${NAMES[p.from]}</b>の${via}が刺さり、${NAMES[p.to]}の${hn(p.toHand)}手が<b>アウト</b>。`
     : `<b>${NAMES[p.from]}</b>の${via}が入った。`;
   const calc = `<span class="sub">${before} + ${p.damage} = ${before + p.damage}`
-    + (after === 0 ? `（${S.mod[p.to]}ちょうどでアウト）` : (before + p.damage >= S.mod[p.to] ? ` → 繰り下がって ${after}本` : `本`))
+    + (after === 0 ? `（${outDesc(p.to)}）`
+       : (S.mode === "deep" && before + p.damage >= S.outAt[p.to] ? ` → 繰り下がって ${after}本` : `本`))
     + (p.passNote ? ` ／ ${p.passNote}` : "") + `</span>`;
 
   S.pending = null;
@@ -2219,7 +2310,7 @@ function stepGotHand(p,h){
   if(st.id === 9){                       // ヒール：回復先を選んだ
     const me = st.who, amt = st.amount;
     const before = S.hands[me][h];
-    const after = Math.min(before + amt, S.max[me]);   // 上限超過は切り捨て（繰り下がりはしない）
+    const after = Math.min(before + amt, S.max[me]);   // 上限を超える分は切り捨て
     S.step = null; closeStepUI();
     S.hands[me][h] = after;
     const orig = S.pending;
@@ -2247,12 +2338,20 @@ function openNumbers(){
   if(st.id === 3){
     const [tp, th] = st.data.target;
     const before = S.hands[tp][th];
-    title.textContent = `足す数を選ぶ（${NAMES[tp]}の${hn(th)}手・${S.mod[tp]}でアウト）`;
-    /* 法があるので、法以上の数は必ずどれかと同じ結果になる。
-       重複を出さないために 1〜法-1 だけ並べ、結果を添える。 */
-    for(let n = 1; n < S.mod[tp]; n++){
-      const after = norm(before + n, tp);
-      choices.push({n, label:`+${n}`, note: after === 0 ? "アウト" : `${after}本`, kill: after === 0});
+    title.textContent = `足す数を選ぶ（${NAMES[tp]}の${hn(th)}手・${outDesc(tp)}）`;
+    if(S.mode === "deep"){
+      /* 繰り下がるので、基準以上の数は必ずどれかと同じ結果になる。
+         重複を出さないよう 1〜基準-1 だけ並べ、結果を添える。 */
+      for(let n = 1; n < S.outAt[tp]; n++){
+        const after = norm(before + n, tp);
+        choices.push({n, label:`+${n}`, note: after === 0 ? "アウト" : `${after}本`, kill: after === 0});
+      }
+    } else {
+      /* 届いた時点で結果は同じなので、生き残る数だけ並べ、最後に「アウト」を1つ置く */
+      for(let n = 1; before + n < S.outAt[tp]; n++){
+        choices.push({n, label:`+${n}`, note:`${before + n}本`, kill:false});
+      }
+      choices.push({n: S.outAt[tp] - before, label:"アウト", note:"落とす", kill:true});
     }
   } else if(st.id === 4){
     title.textContent = `生み出す本数を選ぶ（上限${S.max[st.who]}）`;
@@ -2287,7 +2386,7 @@ function stepGotNumber(n){
         render();
         if(checkDeath()) return;
         endTurn(`<b>${NAMES[me]}</b>の隕石が ${NAMES[tp]}の${hn(th)}手を直撃。`
-          + `<span class="sub">${before} + ${n} = ${before + n} → ${after === 0 ? "アウト" : after + "本"}（${S.mod[tp]}でアウト・防御不可）</span>`);
+          + `<span class="sub">${before} + ${n} = ${before + n} → ${after === 0 ? "アウト" : after + "本"}（${outDesc(tp)}・防御不可）</span>`);
       });
     });
     return;
@@ -2343,12 +2442,12 @@ async function runExpand(me){
   busy = true;
   await spend(me, 5);
   S.max[me] = 5;
-  S.mod[me] = 6;
+  S.outAt[me] = 6;
   S.expanded[me] = true;
   render();
   await poof(me, 0, "拡張", "heal");
   render();
-  endTurn(`<b>${NAMES[me]}</b>が拡張。<span class="sub">5本まで持てるようになり、6ちょうどでアウトに変わった（永久）。6を超えたら6で割った余りに繰り下がる</span>`);
+  endTurn(`<b>${NAMES[me]}</b>が拡張。<span class="sub">5本まで持てるようになり、${outDesc(me)}に変わった（永久）</span>`);
 }
 
 /* ================= 分配 ================= */
