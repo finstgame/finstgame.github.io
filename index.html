@@ -212,6 +212,11 @@
     color:var(--c);
   }
   .hand[data-out="true"] .count{color:#3B4A69; font-size:14px; padding:4px 0;}
+  .hand-exp{
+    font-size:9px; font-weight:700; letter-spacing:.04em;
+    color:#0D1522; background:var(--wood);
+    border-radius:4px; padding:1px 5px; white-space:nowrap;
+  }
 
   /* lunge */
   .hand.lunge-down{animation:lungeDown .34s ease-in-out;}
@@ -929,10 +934,10 @@ const CARDS = {
   2:  {name:"シールド", timing:"defense", text:"受けるダメージが1になる"},
   3:  {name:"隕石",     timing:"self",    text:"相手の生きている手に好きな数字を足す。防御割り込みでは防げない"},
   4:  {name:"召喚",     timing:"self",    text:"片方が0の時、そこに1本〜自分の上限までの好きな数字を生み出す"},
-  5:  {name:"拡張",     timing:"self",    text:"自分だけ、手を5本まで持てるようになり、アウトになる数が6に変わる（永久）"},
+  5:  {name:"拡張",     timing:"self",    text:"自分の片手を選ぶ。その手だけ5本まで持てるようになり、アウトになる数が6に変わる（永久）"},
   6:  {name:"倍返指",   timing:"attack",  text:"このカード自体が攻撃を実行する。ダメージ2倍"},
-  7:  {name:"カウンター",timing:"defense",text:"攻撃を無効化し、そのまま相手に返す。返す先の手は自分で選ぶ。重ねがけ可"},
-  8:  {name:"ダブル",   timing:"attack",  text:"このカード自体が攻撃を実行する。両手の合計を相手の片手に"},
+  7:  {name:"カウンター",timing:"defense",text:"攻撃を無効化し、攻撃してきた手にそのまま返す。重ねがけ可"},
+  8:  {name:"ダブル",   timing:"attack",  text:"両手それぞれで1回ずつ攻撃する。同じ手を2回は狙えない"},
   9:  {name:"ヒール",   timing:"defense", text:"無効化した上で、任意の自分の手にダメージ分を追加（超過分は切り捨て／アウトの手も復活できる）"},
   10: {name:"コピー",   timing:"self",    text:"自分の両手を相手と同じ本数にする。カードはコピーしない"},
 };
@@ -1003,10 +1008,10 @@ function newCode(){
 function newState(){
   return {
     hands: [[1,1],[1,1]],
-    max:   [4,4],                        // 拡張で 5
+    max:   [[4,4],[4,4]],                // 手ごとの上限。拡張した手だけ 5
     mode:  ruleMode,                     // quick | deep
-    outAt: [5,5],                        // アウトの基準。拡張で 6
-    expanded: [false,false],
+    outAt: [[5,5],[5,5]],                // 手ごとのアウトの基準。拡張した手だけ 6
+    expanded: [[false,false],[false,false]],  // 拡張したのはどの手か
     cards: [deal(), deal()],
     used:  [[],[]],
     turn: Math.random() < 0.5 ? 0 : 1,   // 先攻はランダム
@@ -1025,7 +1030,7 @@ function snapshot(){ const o = {}; SYNC.forEach(k => o[k] = S[k]); return o; }
 
 function openingMsg(){
   return `<b>${NAMES[S.turn]}</b>の先攻ではじまります。`
-    + `<span class="sub">${modeName()}モード（${outDesc(0)}）／カードは3枚ずつ。自分の手を選んで相手の手をタップ</span>`;
+    + `<span class="sub">${modeName()}モード（${outDesc(0, 0)}）／カードは3枚ずつ。自分の手を選んで相手の手をタップ</span>`;
 }
 
 /* 状態が確定した所（手番交代・応答フェーズ開始・決着）で呼ぶ */
@@ -1486,7 +1491,7 @@ function openInfo(){
       <li>10種から3枚。<b>各1回きり</b>で補充なし</li>
       <li><b>相手の手札は見えない</b>（枚数だけ分かる）</li>
       <li>「防御割り込み」は<b>相手に攻撃されたとき</b>に使う。15秒で自動パス</li>
-      <li><b>拡張</b>を使うと、<b>その人だけ5でアウトが6でアウト</b>に変わる。5本の手を持てるようになる</li>
+      <li><b>拡張</b>は<b>選んだ片手だけ</b>、5でアウトが6でアウトになる。その手は5本まで持てる</li>
     </ul>
 
     <h4>オンライン</h4>
@@ -1735,12 +1740,12 @@ function toggleSound(){
 }
 
 /* 受け取る側の基準で判定する。0 になった手はアウト。 */
-const norm = (v, p) => S.mode === "deep"
-  ? ((v % S.outAt[p]) + S.outAt[p]) % S.outAt[p]   // ちょうどでアウト、超えたら繰り下がる
-  : (v >= S.outAt[p] ? 0 : v);                     // その数以上でアウト
+const norm = (v, p, h) => S.mode === "deep"
+  ? ((v % S.outAt[p][h]) + S.outAt[p][h]) % S.outAt[p][h]   // ちょうどでアウト、超えたら繰り下がる
+  : (v >= S.outAt[p][h] ? 0 : v);                           // その数以上でアウト
 
 /* 画面に出す言い方（例: 「5以上でアウト」「5ちょうどでアウト」）*/
-const outDesc = p => S.outAt[p] + (S.mode === "deep" ? "ちょうどでアウト" : "以上でアウト");
+const outDesc = (p, h) => S.outAt[p][h] + (S.mode === "deep" ? "ちょうどでアウト" : "以上でアウト");
 const modeName = () => (MODES[S.mode] || MODES.quick).name;
 
 /* ================= 描画 ================= */
@@ -1768,7 +1773,7 @@ function render(){
       <div class="board-head">
         <span class="pip"></span>
         <span class="pname">${NAMES[p]}</span>
-        ${S.expanded[p] ? `<span class="exp">${outDesc(p)}</span>` : ""}
+        ${S.expanded[p].some(Boolean) ? `<span class="exp">拡張ずみ</span>` : ""}
         <span class="ptag">${S.turn === p && !S.over ? "手番" : ""}</span>
       </div>
       <div class="hands">${[0,1].map(h => handHTML(p,h)).join("")}</div>
@@ -1819,23 +1824,24 @@ function handHTML(p,h){
   const selected = S.sel && S.sel[0] === p && S.sel[1] === h;
   const target = isTargetable(p,h);
   /* ヒールはアウトの手も選べるので、生存判定と別に扱う */
-  const healable = S.step && S.step.need === "ownHand" && S.step.healTarget && p === S.step.who;
+  const healable = S.step && S.step.need === "ownHand" && (S.step.healTarget || S.step.expandTarget) && p === S.step.who;
 
   let cls = "hand";
   if(isMine && !out) cls += " selectable";
   if(selected) cls += " selected";
   if(target || healable) cls += " target";
 
-  const sticks = Array.from({length: S.max[p]}, (_,i) =>
+  const sticks = Array.from({length: S.max[p][h]}, (_,i) =>
     `<div class="stick${i < v ? "" : " ghost"}${i >= 4 ? " bonus" : ""}" style="--i:${i}"></div>`).join("");
 
   const clickable = (isMine && !out) || target || healable;
   return `<div class="${cls}" data-p="${p}" data-h="${h}" data-out="${out}"
             tabindex="${clickable ? 0 : -1}"
-            role="button" aria-label="${NAMES[p]}の${hn(h)}手 ${out?"アウト":v+"本"}">
+            role="button" aria-label="${NAMES[p]}の${hn(h)}手 ${out?"アウト":v+"本"}（${outDesc(p,h)}）">
             <div class="flash"></div>
             <div class="sticks">${sticks}</div>
             <div class="count">${out ? "OUT" : v}</div>
+            ${S.expanded[p][h] ? `<div class="hand-exp">${S.outAt[p][h]}でアウト</div>` : ""}
           </div>`;
 }
 
@@ -1886,7 +1892,7 @@ function tap(p,h){
   /* カードの入力待ち中は、その入力として解釈する */
   if(S.step){
     const st = S.step;
-    if(st.need === "ownHand" && p === st.who && (st.healTarget || alive(p,h))) return stepGotHand(p,h);
+    if(st.need === "ownHand" && p === st.who && (st.healTarget || st.expandTarget || alive(p,h))) return stepGotHand(p,h);
     if(st.need === "enemyHand" && p === foe(st.who) && alive(p,h)) return stepGotHand(p,h);
     return;
   }
@@ -1964,10 +1970,10 @@ function attackDesc(p){
             : p.kind === "counter" ? "「カウンター」の返し"
             : "「倍返指」";
   const before = S.hands[p.to][p.toHand];
-  const after = norm(before + p.damage, p.to);
+  const after = norm(before + p.damage, p.to, p.toHand);
   const fate = after === 0 ? "アウト" : `${after}本`;
   return `${NAMES[p.from]}の${via}。<b>${p.damage}ダメージ</b>が${NAMES[p.to]}の${hn(p.toHand)}手へ。
-    <span class="sub">このまま通ると ${before} + ${p.damage} = ${before + p.damage} → ${fate}（${outDesc(p.to)}）</span>`;
+    <span class="sub">このまま通ると ${before} + ${p.damage} = ${before + p.damage} → ${fate}（${outDesc(p.to, p.toHand)}）</span>`;
 }
 
 function renderSheetBody(){
@@ -2058,12 +2064,31 @@ function respond(id){
     return;
   }
 
-  if(id === 7){                                  // カウンター：無効化して相手に返す
+  if(id === 7){                                  // カウンター：無効化して、攻撃してきた手に返す
     consume(r, 7);
     closeSheet();
     S.phase = "resolving";
-    beginStep({id:7, who:r, need:"enemyHand", counterOf:p,
-               text:`<span class="sname">カウンター</span> ${NAMES[foe(r)]}のどの手に返しますか？`});
+    /* 返し先は攻撃してきた手。選ばせると、迷っているあいだに攻撃側の
+       ウォッチドッグが先に発火してカウンターが上書きされる事故が起きる。 */
+    let toHand = p.fromHand;
+    if(toHand === null || toHand === undefined || !alive(foe(r), toHand)){
+      toHand = [0,1].find(h => alive(foe(r), h));   // 攻撃元が特定できないときは生きている手へ
+    }
+    if(toHand === undefined){ resolvePending(); return; }   // 返す先が無ければそのまま通す
+    const orig = p;
+    S.pending = {
+      from: r, fromHand: null,
+      to: foe(r), toHand,
+      damage: orig.damage,
+      kind: "counter",
+      modifiers: orig.modifiers.concat("counter"),
+      chain: (orig.chain || 0) + 1
+    };
+    poof(orig.to, orig.toHand, "無効", "nul").then(() => {
+      S.msg = `<b>${NAMES[r]}</b>がカウンター。<span class="sub">${orig.damage}ダメージを ${NAMES[foe(r)]}の${hn(toHand)}手へ返した</span>`;
+      say(S.msg);
+      enterDefense();      // 返された側もシールド／ヒール／カウンターで応答できる
+    });
     return;
   }
 }
@@ -2079,7 +2104,7 @@ async function resolvePending(){
 
   const src = p.fromHand === null || p.fromHand === undefined ? null : {p:p.from, h:p.fromHand};
   const before = S.hands[p.to][p.toHand];
-  const after = norm(before + p.damage, p.to);
+  const after = norm(before + p.damage, p.to, p.toHand);
   /* 相手の端末でも突き出し→着弾を再現できるように残す */
   S.hit = {p: src ? src.p : null, h: src ? src.h : null,
            dp: p.to, dh: p.toHand, dmg: p.damage, out: after === 0};
@@ -2092,12 +2117,26 @@ async function resolvePending(){
     ? `<b>${NAMES[p.from]}</b>の${via}が刺さり、${NAMES[p.to]}の${hn(p.toHand)}手が<b>アウト</b>。`
     : `<b>${NAMES[p.from]}</b>の${via}が入った。`;
   const calc = `<span class="sub">${before} + ${p.damage} = ${before + p.damage}`
-    + (after === 0 ? `（${outDesc(p.to)}）`
-       : (S.mode === "deep" && before + p.damage >= S.outAt[p.to] ? ` → 繰り下がって ${after}本` : `本`))
+    + (after === 0 ? `（${outDesc(p.to, p.toHand)}）`
+       : (S.mode === "deep" && before + p.damage >= S.outAt[p.to][p.toHand] ? ` → 繰り下がって ${after}本` : `本`))
     + (p.passNote ? ` ／ ${p.passNote}` : "") + `</span>`;
 
   S.pending = null;
   if(checkDeath()) return;
+
+  /* ダブルの2回目。手番はまだ渡さない */
+  if(S.doubleQueue && S.doubleQueue.length){
+    const nx = S.doubleQueue.shift();
+    const attacker = p.from;
+    if(S.hands[attacker][nx.mine] > 0 && S.hands[foe(attacker)][nx.theirs] > 0){
+      say(head + calc + `<span class="sub">ダブルの2回目</span>`);
+      busy = false;
+      declareAttack({from:attacker, fromHand:nx.mine, to:foe(attacker), toHand:nx.theirs,
+                     damage:S.hands[attacker][nx.mine], kind:"double"});
+      return;
+    }
+  }
+  S.doubleQueue = null;
   endTurn(head + calc);
 }
 
@@ -2190,15 +2229,20 @@ function useCard(id){
   switch(id){
     case 1:  return runReverse(me);
     case 10: return runCopy(me);
-    case 5:  return runExpand(me);
+    case 5:  return beginStep({id:5, who:me, need:"ownHand", expandTarget:true,
+                text:`<span class="sname">拡張</span> どちらの手を強くしますか？`});
     case 3:  return beginStep({id:3, who:me, need:"enemyHand",
                 text:`<span class="sname">隕石</span> どの手に落としますか？`});
     case 4:  return beginStep({id:4, who:me, need:"number",
                 text:`<span class="sname">召喚</span> 生み出す本数を選んでください`});
     case 6:  return beginStep({id:6, who:me, need:"ownHand",
                 text:`<span class="sname">倍返指</span> 攻撃する自分の手を選んでください`});
-    case 8:  return beginStep({id:8, who:me, need:"enemyHand",
-                text:`<span class="sname">ダブル</span> 両手の合計 ${S.hands[me][0] + S.hands[me][1]} をどの手に？`});
+    case 8:  {
+      const live = [0,1].filter(h => S.hands[me][h] > 0);
+      if(!live.length) return;
+      return beginStep({id:8, who:me, need:"enemyHand", data:{mine:live, hits:[]},
+                text:`<span class="sname">ダブル</span> ${hn(live[0])}手（${S.hands[me][live[0]]}本）でどの手を狙いますか？`});
+    }
   }
 }
 
@@ -2232,7 +2276,6 @@ function cancelStep(){
   closeStepUI();
   /* 応答フェーズ由来のステップ（カウンター／ヒール）は取り消せない。
      カードは既に消費済みなので、やめる＝そのまま受けるに倒す。 */
-  if(st && st.counterOf){ S.pending = st.counterOf; return resolvePending(); }
   if(st && st.id === 9){ S.pending.passNote = "ヒールの回復先を選ばず終了"; return resolvePending(); }
   S.phase = "normal";
   render();
@@ -2246,6 +2289,11 @@ function closeStepUI(){
 
 function stepGotHand(p,h){
   const st = S.step;
+
+  if(st.id === 5){                       // 拡張：強くする手を選んだ
+    S.step = null; closeStepUI();
+    return runExpand(st.who, h);
+  }
 
   if(st.id === 3){                       // 隕石：手を決めたら数を選ぶ
     st.data.target = [p,h];
@@ -2277,32 +2325,31 @@ function stepGotHand(p,h){
     return;
   }
 
-  if(st.id === 8){                       // ダブル：両手の合計で1回攻撃
-    const me = st.who, dmg = S.hands[me][0] + S.hands[me][1];
+  if(st.id === 8){                       // ダブル：両手それぞれで1回ずつ。同じ手は狙えない
+    const me = st.who;
+    st.data.hits.push({mine: st.data.mine[st.data.hits.length], theirs: h});
+
+    /* まだ攻撃していない自分の手があり、狙える相手の手が残っていれば続ける */
+    const nextMine = st.data.mine[st.data.hits.length];
+    const used = st.data.hits.map(x => x.theirs);
+    const remain = [0,1].filter(x => S.hands[foe(me)][x] > 0 && !used.includes(x));
+    if(nextMine !== undefined && remain.length){
+      document.getElementById("stepText").innerHTML =
+        `<span class="sname">ダブル</span> つぎは${hn(nextMine)}手（${S.hands[me][nextMine]}本）。残りの手を狙ってください`;
+      render();
+      return;
+    }
+
+    const hits = st.data.hits;
     S.step = null; closeStepUI();
-    busy = true;                       // 消費アニメ中に次の操作を受け付けない
-    spend(me, 8).then(() => {
+    busy = true;
+    spend(me, 8).then(async () => {
       busy = false;
       render();
-      declareAttack({from:me, fromHand:null, to:p, toHand:h, damage:dmg, kind:"double"});
-    });
-    return;
-  }
-
-  if(st.id === 7){                       // カウンター：返す先を選んだ
-    const orig = st.counterOf;
-    S.step = null; closeStepUI();
-    S.pending = {
-      from: st.who, fromHand: null,
-      to: p, toHand: h,
-      damage: orig.damage,
-      kind: "counter",
-      modifiers: orig.modifiers.concat("counter"),
-      chain: (orig.chain || 0) + 1
-    };
-    poof(orig.to, orig.toHand, "無効", "nul").then(() => {
-      say(`<b>${NAMES[st.who]}</b>がカウンター。<span class="sub">${orig.damage}ダメージを ${NAMES[p]}の${hn(h)}手へ返した</span>`);
-      enterDefense();      // 返された側もシールド／ヒール／カウンターで応答できる
+      /* 1回目を通常の攻撃として宣言し、2回目は解決後に続ける */
+      S.doubleQueue = hits.slice(1);
+      declareAttack({from:me, fromHand:hits[0].mine, to:foe(me), toHand:hits[0].theirs,
+                     damage:S.hands[me][hits[0].mine], kind:"double"});
     });
     return;
   }
@@ -2310,7 +2357,7 @@ function stepGotHand(p,h){
   if(st.id === 9){                       // ヒール：回復先を選んだ
     const me = st.who, amt = st.amount;
     const before = S.hands[me][h];
-    const after = Math.min(before + amt, S.max[me]);   // 上限を超える分は切り捨て
+    const after = Math.min(before + amt, S.max[me][h]);   // その手の上限を超える分は切り捨て
     S.step = null; closeStepUI();
     S.hands[me][h] = after;
     const orig = S.pending;
@@ -2322,7 +2369,7 @@ function stepGotHand(p,h){
         if(checkDeath()) return;
         endTurn(`<b>${NAMES[me]}</b>のヒール。${NAMES[orig.from]}の攻撃を無効化した。`
           + `<span class="sub">${hn(h)}手 ${before} → ${after}本`
-          + (before + amt > S.max[me] ? `（上限${S.max[me]}で切り捨て）` : "") + `</span>`);
+          + (before + amt > S.max[me][h] ? `（上限${S.max[me][h]}で切り捨て）` : "") + `</span>`);
       });
     return;
   }
@@ -2338,24 +2385,26 @@ function openNumbers(){
   if(st.id === 3){
     const [tp, th] = st.data.target;
     const before = S.hands[tp][th];
-    title.textContent = `足す数を選ぶ（${NAMES[tp]}の${hn(th)}手・${outDesc(tp)}）`;
+    title.textContent = `足す数を選ぶ（${NAMES[tp]}の${hn(th)}手・${outDesc(tp, th)}）`;
     if(S.mode === "deep"){
       /* 繰り下がるので、基準以上の数は必ずどれかと同じ結果になる。
          重複を出さないよう 1〜基準-1 だけ並べ、結果を添える。 */
-      for(let n = 1; n < S.outAt[tp]; n++){
-        const after = norm(before + n, tp);
+      for(let n = 1; n < S.outAt[tp][th]; n++){
+        const after = norm(before + n, tp, th);
         choices.push({n, label:`+${n}`, note: after === 0 ? "アウト" : `${after}本`, kill: after === 0});
       }
     } else {
       /* 届いた時点で結果は同じなので、生き残る数だけ並べ、最後に「アウト」を1つ置く */
-      for(let n = 1; before + n < S.outAt[tp]; n++){
+      for(let n = 1; before + n < S.outAt[tp][th]; n++){
         choices.push({n, label:`+${n}`, note:`${before + n}本`, kill:false});
       }
-      choices.push({n: S.outAt[tp] - before, label:"アウト", note:"落とす", kill:true});
+      choices.push({n: S.outAt[tp][th] - before, label:"アウト", note:"落とす", kill:true});
     }
   } else if(st.id === 4){
-    title.textContent = `生み出す本数を選ぶ（上限${S.max[st.who]}）`;
-    for(let n = 1; n <= S.max[st.who]; n++) choices.push({n, label:String(n), note:`${n}本`, kill:false});
+    const sh = S.hands[st.who].indexOf(0);
+    const cap = S.max[st.who][sh];
+    title.textContent = `生み出す本数を選ぶ（${hn(sh)}手・上限${cap}）`;
+    for(let n = 1; n <= cap; n++) choices.push({n, label:String(n), note:`${n}本`, kill:false});
   }
 
   choices.forEach(c => {
@@ -2381,12 +2430,12 @@ function stepGotNumber(n){
     spend(me, 3).then(() => {
       render();
       const before = S.hands[tp][th];
-      const after = norm(before + n, tp);
+      const after = norm(before + n, tp, th);
       return strike(null, tp, th, n, after).then(() => {
         render();
         if(checkDeath()) return;
         endTurn(`<b>${NAMES[me]}</b>の隕石が ${NAMES[tp]}の${hn(th)}手を直撃。`
-          + `<span class="sub">${before} + ${n} = ${before + n} → ${after === 0 ? "アウト" : after + "本"}（${outDesc(tp)}・防御不可）</span>`);
+          + `<span class="sub">${before} + ${n} = ${before + n} → ${after === 0 ? "アウト" : after + "本"}（${outDesc(tp, th)}・防御不可）</span>`);
       });
     });
     return;
@@ -2416,8 +2465,8 @@ async function runReverse(me){
   const a = S.hands[0].slice(), b = S.hands[1].slice();
   /* 指の本数だけ入れ替える。拡張（上限・法）は本人に残るので、
      受け取った本数は受け取る側の法で正規化される（§3 の想定内コンボ）。 */
-  S.hands[0] = b.map(v => norm(v, 0));
-  S.hands[1] = a.map(v => norm(v, 1));
+  S.hands[0] = b.map((v,h) => norm(v, 0, h));
+  S.hands[1] = a.map((v,h) => norm(v, 1, h));
   render();
   await poof(0, 0, "反転", "nul");
   render();
@@ -2430,7 +2479,7 @@ async function runCopy(me){
   await spend(me, 10);
   const opp = foe(me);
   const src = S.hands[opp].slice();
-  S.hands[me] = src.map(v => norm(v, me));       // 上限を超える本数を受け取った手は即アウト
+  S.hands[me] = src.map((v,h) => norm(v, me, h));   // その手の基準を超える本数を受け取ると即アウト
   render();
   await poof(me, 0, "コピー", "nul");
   render();
@@ -2438,16 +2487,16 @@ async function runCopy(me){
   endTurn(`<b>${NAMES[me]}</b>がコピー。<span class="sub">${NAMES[opp]}の ${src.join("/")} を写して ${S.hands[me].join("/")}（カードはコピーしない）</span>`);
 }
 
-async function runExpand(me){
+async function runExpand(me, h){
   busy = true;
   await spend(me, 5);
-  S.max[me] = 5;
-  S.outAt[me] = 6;
-  S.expanded[me] = true;
+  S.max[me][h] = 5;
+  S.outAt[me][h] = 6;
+  S.expanded[me][h] = true;
   render();
-  await poof(me, 0, "拡張", "heal");
+  await poof(me, h, "拡張", "heal");
   render();
-  endTurn(`<b>${NAMES[me]}</b>が拡張。<span class="sub">5本まで持てるようになり、${outDesc(me)}に変わった（永久）</span>`);
+  endTurn(`<b>${NAMES[me]}</b>が${hn(h)}手を拡張。<span class="sub">その手だけ5本まで持てるようになり、${outDesc(me, h)}に変わった（永久）</span>`);
 }
 
 /* ================= 分配 ================= */
@@ -2455,11 +2504,11 @@ function splitOptions(){
   if(!S) return [];
   const [L,R] = S.hands[S.turn];
   const total = L + R;
-  const max = S.max[S.turn];
+  const maxL = S.max[S.turn][0], maxR = S.max[S.turn][1];
   const out = [];
-  for(let a = 0; a <= max; a++){
+  for(let a = 0; a <= maxL; a++){
     const b = total - a;
-    if(b < 0 || b > max) continue;
+    if(b < 0 || b > maxR) continue;
     if(a === L && b === R) continue;   // 同じ配分に戻すだけの手は禁止
     if(a === R && b === L) continue;   // 左右を入れ替えるだけも禁止
     if(a === 0 && b === 0) continue;
@@ -2502,6 +2551,7 @@ function closeAllPanels(){
 }
 
 function endTurn(msg){
+  S.doubleQueue = null;
   /* 保険：どの経路から来ても、両手アウトのプレイヤーが居るまま手番を回さない */
   if(dead(0) || dead(1)){ S.pending = null; S.step = null; checkDeath(); return; }
   S.sel = null;
