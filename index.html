@@ -580,6 +580,30 @@
     line-height:1.25;
   }
   .win .why{font-size:13px; color:var(--dim); text-align:center; line-height:1.5;}
+  .recap{
+    width:100%; max-width:340px;
+    display:flex; flex-direction:column; gap:10px;
+    background:var(--panel); border:2px solid #22314E;
+    border-radius:var(--r); padding:12px;
+  }
+  .recap-sides{display:flex; flex-direction:column; gap:9px;}
+  .recap-side{border-left:3px solid var(--c); padding-left:9px;}
+  .rs-name{font-size:10px; letter-spacing:.12em; color:var(--dim); font-weight:700; margin-bottom:4px;}
+  .rs-cards{display:flex; flex-wrap:wrap; gap:5px;}
+  .rs-card{
+    font-size:11.5px; font-weight:700;
+    background:#0F1A2C; border:1.5px solid #2A3550;
+    border-radius:6px; padding:2px 7px;
+  }
+  .rs-none{font-size:11.5px; color:var(--dim);}
+  .recap-log{border-top:1px solid #22314E; padding-top:10px;}
+  .rl-row{
+    display:flex; gap:7px; font-size:11.5px; line-height:1.5;
+    color:var(--dim); padding:1px 0;
+  }
+  .rl-row.last{color:var(--bone); font-weight:700;}
+  .rl-who{color:var(--c); flex:0 0 auto; font-weight:700;}
+  .rl-t{min-width:0;}
   /* 縦並びなので、共通の flex:1 で縦に伸びないようにする */
   .win button{flex:0 0 auto; width:100%; max-width:260px;}
 
@@ -929,6 +953,7 @@
 <div class="win" id="win">
   <h2 id="winText"></h2>
   <div class="why" id="winWhy"></div>
+  <div class="recap" id="winRecap"></div>
   <button class="primary" id="winAgain" onclick="restart()">もう一戦</button>
   <button class="ghost" onclick="toLobby()">ロビーに戻る</button>
 </div>
@@ -978,7 +1003,7 @@ const NET = {
 /* 紛らわしい文字（I L O 0 1）を除いた6文字 */
 const CODE_ALPHABET = "ABCDEFGHJKMNPQRSTUVWXYZ23456789";
 /* 同期する項目。sel / pick / step は各自の手元の操作なので送らない */
-const SYNC = ["hands","max","outAt","expanded","mode","cards","used","turn","phase","pending","over","winner","why","msg","hit","seq"];
+const SYNC = ["hands","max","outAt","expanded","mode","cards","used","turn","phase","pending","over","winner","why","msg","hit","hist","seq"];
 
 /* アウトの条件。部屋を作った側が決め、相手はそれを受け取る。
    quick … その数以上でアウト（手が落ちやすく、決着が早い）
@@ -1042,6 +1067,7 @@ function newState(){
     why: "",
     msg: "",
     hit: null,                          // 直前の着弾。受信側が突き出し演出を再現するのに使う
+    hist: [],                           // 直前の手。決着後に「何で負けたか」を出すのに使う
     seq: 0
   };
 }
@@ -1642,6 +1668,13 @@ const wait  = ms => new Promise(r => setTimeout(r, ms));
 
 function say(html){ document.getElementById("log").innerHTML = html; }
 
+/* 決着後に振り返れるよう、要点だけ短く残す */
+function note(p, t){
+  if(!S.hist) S.hist = [];
+  S.hist.push({p, t});
+  if(S.hist.length > 16) S.hist.shift();
+}
+
 /* 手応え。対応していない端末では何も起きない */
 function buzz(ms){
   if(window.matchMedia("(prefers-reduced-motion: reduce)").matches) return;
@@ -2143,6 +2176,8 @@ async function resolvePending(){
        : (S.mode === "deep" && before + p.damage >= S.outAt[p.to][p.toHand] ? ` → 繰り下がって ${after}本` : `本`))
     + (p.passNote ? ` ／ ${p.passNote}` : "") + `</span>`;
 
+  note(p.from, `${p.damage}ダメージ → ${NAMES[p.to]}の${hn(p.toHand)}手が`
+    + (after === 0 ? "アウト" : `${after}本`));
   S.pending = null;
   if(checkDeath()) return;
 
@@ -2275,6 +2310,7 @@ function useCard(id){
 function consume(p, id){
   S.cards[p] = S.cards[p].filter(x => x !== id);
   S.used[p].push(id);
+  note(p, `「${CARDS[id].name}」を使った`);
 }
 
 /* 消費のアニメーションを挟んでから消す */
@@ -2555,6 +2591,7 @@ function closeSplit(){ document.getElementById("split").classList.remove("open")
 function applySplit(a,b){
   S.hit = null;
   const from = S.hands[S.turn].join("/");
+  note(S.turn, `分配 ${from} → ${a}/${b}`);
   S.hands[S.turn] = [a,b];
   closeSplit();
   endTurn(`指を組み替えた。<span class="sub">${from} → ${a}/${b}</span>`);
@@ -2611,6 +2648,30 @@ function finish(winner, why){
   commit();
 }
 
+/* 何をされて負けたのかを、使われたカードと直前の手で見せる */
+function recapHTML(){
+  const me = online ? seat : 0;
+  const side = (p) => {
+    const used = (S.used[p] || []);
+    const label = online ? (p === me ? "あなた" : "あいて") : NAMES[p];
+    return `<div class="recap-side" style="--c:${col(p)}">
+      <div class="rs-name">${label}が使ったカード</div>
+      ${used.length
+        ? `<div class="rs-cards">${used.map(id => `<span class="rs-card">${CARDS[id].name}</span>`).join("")}</div>`
+        : `<div class="rs-none">使わなかった</div>`}
+    </div>`;
+  };
+  const last = (S.hist || []).slice(-6);
+  return `
+    <div class="recap-sides">${side(foe(me))}${side(me)}</div>
+    ${last.length ? `<div class="recap-log">
+      <div class="rs-name">最後の流れ</div>
+      ${last.map((e,i) => `<div class="rl-row${i === last.length-1 ? " last" : ""}" style="--c:${col(e.p)}">
+        <span class="rl-who">${online ? (e.p === me ? "あなた" : "あいて") : NAMES[e.p]}</span>
+        <span class="rl-t">${e.t}</span></div>`).join("")}
+    </div>` : ""}`;
+}
+
 function showWin(){
   const w = S.winner;
   if(w === null || w === undefined) return;
@@ -2623,6 +2684,7 @@ function showWin(){
   document.getElementById("winText").innerHTML =
     (online ? (w === seat ? "あなた" : NAMES[w]) : NAMES[w]) + "<br>の勝ち";
   document.getElementById("winWhy").textContent = S.why || "両手ともアウトで決着";
+  document.getElementById("winRecap").innerHTML = recapHTML();
   document.getElementById("winAgain").textContent = online ? "もう一戦" : "最初から";
   document.getElementById("win").classList.add("open");
   if(!online || w === seat) SFX.win(); else SFX.lose();
