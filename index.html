@@ -587,8 +587,19 @@
     border-radius:var(--r); padding:12px;
   }
   .recap-sides{display:flex; flex-direction:column; gap:9px;}
-  .recap-side{border-left:3px solid var(--c); padding-left:9px;}
-  .rs-name{font-size:10px; letter-spacing:.12em; color:var(--dim); font-weight:700; margin-bottom:4px;}
+  /* 誰の側かは、盤面ヘッダーと同じ色付きの丸で示す */
+  .rs-name{
+    display:flex; align-items:center; gap:6px;
+    font-size:10px; letter-spacing:.12em; color:var(--dim);
+    font-weight:700; margin-bottom:5px;
+  }
+  .recap-side .rs-name::before{
+    content:""; flex:0 0 auto;
+    width:8px; height:8px; border-radius:50%;
+    background:var(--c);
+  }
+  .recap-side .rs-cards{padding-left:14px;}
+  .recap-side .rs-none{padding-left:14px;}
   .rs-cards{display:flex; flex-wrap:wrap; gap:5px;}
   .rs-card{
     font-size:11.5px; font-weight:700;
