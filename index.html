@@ -747,6 +747,7 @@
   .app > .top{order:0;}
   .app > .waiting-bar{order:1;}
   .app > .gone-bar{order:1;}
+  .app > .queue-bar{order:1;}
   .app > .board{order:2;}
   .app > .mid{order:3;}
   .app > .step-bar{order:6;}
@@ -847,6 +848,23 @@
     padding:11px 12px;
   }
   .gone-bar.open{display:flex;}
+
+  /* 野良マッチの待機・発見 */
+  .queue-bar{
+    display:none;
+    align-items:center; gap:10px; flex-wrap:wrap;
+    font-size:12.5px; line-height:1.5; color:var(--bone);
+    background:var(--panel); border:2px solid #22314E;
+    border-radius:var(--r); padding:11px 12px;
+  }
+  .queue-bar.open{display:flex;}
+  .queue-bar span{flex:1; min-width:140px;}
+  .queue-bar button{flex:0 0 auto; padding:8px 13px; font-size:12px;}
+  .queue-bar[data-found="true"]{
+    border-color:var(--wood);
+    background:color-mix(in srgb, var(--wood) 12%, var(--panel));
+  }
+  .queue-bar[data-found="true"] b{color:var(--wood);}
   .gone-bar span{flex:1; min-width:150px;}
   .gone-bar button{flex:0 0 auto; padding:8px 12px; font-size:12px;}
 
@@ -867,6 +885,7 @@
 
   <div class="waiting-bar" id="waitBar"></div>
   <div class="gone-bar" id="goneBar"></div>
+  <div class="queue-bar" id="queueBar"></div>
 
   <div class="board" id="board1"></div>
 
@@ -1417,6 +1436,137 @@ function enterGame(){
   if(S.over) showWin();
 }
 
+
+/* =========================================================
+   野良マッチ
+   待っているあいだは CPU 戦を回す。相手が来たら知らせて、
+   本人が承知してから切り替える（対戦中に盤面が消えないように）。
+   ========================================================= */
+let queueCode = null, queueChan = null, queuePoll = null, queueFound = false;
+
+function queued(){ return !!queueCode; }
+
+async function randomMatch(){
+  lobbyError("");
+  if(!sb) return lobbyError("オンライン機能を読み込めませんでした");
+  if(queued()) return;
+
+  const st = newState();
+  const { data, error } = await sb.rpc("match_random", {
+    p_me: myId, p_mode: ruleMode, p_code: newCode(), p_state: st
+  });
+  if(error) return lobbyError(explainQueue(error));
+  const row = Array.isArray(data) ? data[0] : data;
+  if(!row) return lobbyError("マッチングに失敗しました。もう一度お試しください");
+
+  if(row.seat === 1){                       // 待っている人がいた → すぐ始まる
+    await enterRandom(row.code, 1);
+    return;
+  }
+
+  /* 自分が待つ側。CPU戦を始めて、裏で相手を待つ */
+  queueCode = row.code;
+  queueFound = false;
+  await watchQueue(row.code);
+  document.getElementById("lobby").classList.remove("open");
+  startCPU();
+  showQueueBar("waiting");
+}
+
+function explainQueue(e){
+  const m = (e && e.message) || String(e);
+  if(/match_random|schema cache|does not exist/i.test(m))
+    return "野良マッチの準備がまだです。Supabase で matchmaking.sql を実行してください";
+  return explain(e);
+}
+
+/* 相手が入ってきたら知らせる */
+async function watchQueue(code){
+  if(queueChan){ try{ sb.removeChannel(queueChan); }catch(e){} }
+  queueChan = sb.channel("queue:" + code)
+    .on("postgres_changes",
+        { event:"UPDATE", schema:"public", table:"rooms", filter:"code=eq." + code },
+        payload => { if(payload.new && payload.new.guest_id) onOpponentFound(); });
+  await queueChan.subscribe();
+
+  /* Realtime を取りこぼしても気づけるように、15秒ごとに見に行く */
+  clearInterval(queuePoll);
+  queuePoll = setInterval(async () => {
+    if(!queueCode) return clearInterval(queuePoll);
+    const { data } = await sb.from("rooms").select("guest_id").eq("code", queueCode).maybeSingle();
+    if(data && data.guest_id) onOpponentFound();
+  }, 15000);
+}
+
+function onOpponentFound(){
+  if(!queueCode || queueFound) return;
+  queueFound = true;
+  buzz([30,70,30]); SFX.turn();
+  showQueueBar("found");
+}
+
+/* 待機・発見の帯を盤面の上に出す */
+function showQueueBar(mode){
+  const bar = document.getElementById("queueBar");
+  if(!bar) return;
+  if(!queueCode){ bar.classList.remove("open"); return; }
+  if(mode === "found"){
+    bar.dataset.found = "true";
+    bar.innerHTML = `<span><b>相手が見つかりました</b></span>
+      <button class="primary" onclick="acceptMatch()">対戦に移る</button>`;
+  } else {
+    bar.dataset.found = "false";
+    bar.innerHTML = `<span class="dots">相手を探しています</span>
+      <button class="ghost" onclick="cancelQueue()">やめる</button>`;
+  }
+  bar.classList.add("open");
+}
+
+async function acceptMatch(){
+  const code = queueCode;
+  if(!code) return;
+  clearInterval(queuePoll);
+  if(queueChan){ try{ sb.removeChannel(queueChan); }catch(e){} queueChan = null; }
+  queueCode = null; queueFound = false;
+  document.getElementById("queueBar").classList.remove("open");
+  cpuStop();
+  if(S) S.cpu = false;
+  NAMES[1] = "プレイヤー2";
+  await enterRandom(code, 0);
+}
+
+async function enterRandom(code, mySeat){
+  const { data: m, error } = await sb.from("matches").select("state").eq("room_code", code).maybeSingle();
+  if(error || !m) return lobbyError("対戦データが見つかりませんでした");
+  online = true; seat = mySeat;
+  S = Object.assign({}, m.state, {sel:null, pick:null, step:null, cpu:false});
+  NAMES[1] = "プレイヤー2";
+  await connect(code);
+  location.hash = code;
+  enterGame();
+  if(mySeat === 1) commit();      // 入ったことを相手に伝える
+}
+
+async function cancelQueue(){
+  const code = queueCode;
+  clearInterval(queuePoll);
+  if(queueChan){ try{ sb.removeChannel(queueChan); }catch(e){} queueChan = null; }
+  queueCode = null; queueFound = false;
+  const bar = document.getElementById("queueBar");
+  if(bar) bar.classList.remove("open");
+  if(code && sb){ try{ await sb.rpc("leave_queue", { p_me: myId }); }catch(e){} }
+  toLobby();
+}
+
+/* 何人待っているかをロビーに出す */
+async function refreshQueueSize(){
+  const el = document.getElementById("queueSize");
+  if(!el || !sb) return;
+  const { data, error } = await sb.rpc("queue_size", { p_mode: ruleMode });
+  if(error){ el.textContent = ""; return; }
+  el.textContent = data > 0 ? `いま ${data}人 待っています` : "いま待っている人はいません（CPU戦をしながら待てます）";
+}
+
 /* ---- ロビーの画面 ---- */
 function showLobby(mode){
   const el = document.getElementById("lobbyInner");
@@ -1464,8 +1614,12 @@ function showLobby(mode){
       ? "5ちょうどでアウト。超えたぶんは5で割った余りに繰り下がるので、手が粘って試合が長くなります（3本の手に4ダメージ → 7 → 2本）。"
       : "5以上になった手はそのままアウト。決着が早くつきます。"}</div>
 
-    <h3>オンラインで対戦する</h3>
-    <button class="primary" onclick="createRoom()">部屋を作る</button>
+    <h3>だれかと対戦する</h3>
+    <button class="primary" onclick="randomMatch()">ランダム対戦</button>
+    <div class="lobby-note" id="queueSize">　</div>
+
+    <h3>友達と対戦する</h3>
+    <button class="ghost" style="width:100%" onclick="createRoom()">部屋を作る</button>
     <div class="join-row">
       <input id="codeInput" maxlength="6" placeholder="コード" autocapitalize="characters"
              autocomplete="off" spellcheck="false" aria-label="ルームコード6文字">
@@ -1480,6 +1634,7 @@ function showLobby(mode){
     <div class="lobby-note">オンラインは、相手の手札が見えません。1台版は交代で回して遊ぶ用です。</div>`;
   const inp = document.getElementById("codeInput");
   inp.addEventListener("keydown", e => { if(e.key === "Enter") joinRoom(inp.value); });
+  refreshQueueSize();
 }
 
 function lobbyError(msg){
@@ -1652,6 +1807,20 @@ const myTurn   = () => !online || S.turn === seat;
 const iRespond = () => !online || (S.pending && S.pending.responder === seat);
 
 function restart(){
+  if(!online && S && S.cpu){
+    cpuStop();
+    const st = newState();
+    Object.assign(S, st);
+    S.cpu = true; S.sel = null; S.pick = null; S.step = null;
+    busy = false;
+    document.getElementById("win").classList.remove("open");
+    closeAllPanels();
+    render();
+    say(openingMsg());
+    cpuTick();
+    if(queued()) showQueueBar(queueFound ? "found" : "waiting");
+    return;
+  }
   if(online){
     const st = newState();
     Object.assign(S, st);
@@ -2913,6 +3082,7 @@ function showWin(){
   const w = S.winner;
   if(w === null || w === undefined) return;
   cpuStop();
+  if(queued()) showQueueBar(queueFound ? "found" : "waiting");
   /* 決着したら、手番の呼び出しも切断の警告も引っ込める */
   document.title = BASE_TITLE;
   wasMine = false;
