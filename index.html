@@ -2653,7 +2653,7 @@ function recapHTML(){
   const me = online ? seat : 0;
   const side = (p) => {
     const used = (S.used[p] || []);
-    const label = online ? (p === me ? "あなた" : "あいて") : NAMES[p];
+    const label = NAMES[p] + (online && p === me ? "（あなた）" : "");
     return `<div class="recap-side" style="--c:${col(p)}">
       <div class="rs-name">${label}が使ったカード</div>
       ${used.length
@@ -2667,7 +2667,7 @@ function recapHTML(){
     ${last.length ? `<div class="recap-log">
       <div class="rs-name">最後の流れ</div>
       ${last.map((e,i) => `<div class="rl-row${i === last.length-1 ? " last" : ""}" style="--c:${col(e.p)}">
-        <span class="rl-who">${online ? (e.p === me ? "あなた" : "あいて") : NAMES[e.p]}</span>
+        <span class="rl-who">${NAMES[e.p]}</span>
         <span class="rl-t">${e.t}</span></div>`).join("")}
     </div>` : ""}`;
 }
