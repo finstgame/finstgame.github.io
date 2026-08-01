@@ -41,6 +41,7 @@
   *{box-sizing:border-box; margin:0; padding:0; -webkit-tap-highlight-color:transparent;}
 
   body{
+    padding-bottom:calc(12px + env(safe-area-inset-bottom));
     background:
       radial-gradient(120% 80% at 50% 0%, #17253E 0%, transparent 60%),
       radial-gradient(120% 80% at 50% 100%, #17253E 0%, transparent 60%),
@@ -564,7 +565,9 @@
     justify-content:center;
     flex-direction:column;
     gap:18px;
-    padding:24px;
+    padding:24px calc(24px + env(safe-area-inset-bottom));
+    overflow-y:auto;
+    overscroll-behavior:contain;
     z-index:30;
   }
   .win.open{display:flex; animation:flash-in .4s ease-out;}
@@ -694,12 +697,16 @@
       radial-gradient(120% 80% at 50% 0%, #17253E 0%, transparent 60%),
       var(--ink);
     display:none;
-    align-items:center;
-    justify-content:center;
-    padding:24px;
+    /* 中身が画面より高いときにスクロールできるようにする。
+       flex の中央寄せだけだと上下がはみ出して手が届かなくなる。 */
+    overflow-y:auto;
+    overscroll-behavior:contain;
+    -webkit-overflow-scrolling:touch;
+    padding:20px 20px calc(28px + env(safe-area-inset-bottom));
     z-index:40;
   }
-  .lobby.open{display:flex;}
+  .lobby.open{display:grid;}
+  .lobby-inner{margin:auto;}
 
   /* 盤面の上下は「自分が下」。オンラインでは席によって入れ替える */
   .app > .top{order:0;}
@@ -711,6 +718,7 @@
   .app > .panel{order:7;}
   .app > .bar{order:8;}
   .lobby-inner{width:100%; max-width:380px; display:flex; flex-direction:column; gap:14px;}
+  .lobby-inner{margin:auto;}
   .lobby .brand{font-size:clamp(30px, 9vw, 40px); text-align:center;}
   .lobby .tag{
     text-align:center; font-size:11.5px; color:var(--dim);
