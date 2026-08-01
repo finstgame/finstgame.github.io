@@ -4,7 +4,8 @@
 <meta name="description" content="相手の両手をアウトにしたら勝ち。リンクを開くだけで遊べる2人対戦のブラウザゲームです。">
 <meta name="theme-color" content="#0D1522">
 
-<link rel="icon" href="assets/icon.svg" type="image/svg+xml">
+<link rel="icon" href="assets/favicon-32.png" sizes="32x32">
+<link rel="icon" href="assets/icon-192.png" sizes="192x192">
 <link rel="apple-touch-icon" href="assets/apple-touch-icon.png">
 <link rel="canonical" href="https://finstgame.github.io/">
 
@@ -76,6 +77,17 @@
     flex:0 0 auto;
   }
   .brand .dot{color:var(--wood);}
+  .brand-img{
+    height:clamp(30px, 8.5vw, 40px);
+    width:auto; flex:0 0 auto;
+    /* 黒い輪郭が濃紺に沈まないよう、わずかに浮かせる */
+    filter:drop-shadow(0 0 1.5px rgba(245,240,230,.55));
+  }
+  .lobby-logo{
+    height:auto; width:100%; max-width:290px;
+    align-self:center; margin:-6px 0 -10px;
+    filter:drop-shadow(0 0 3px rgba(245,240,230,.5));
+  }
   .phase-tag{
     font-size:11px;
     color:var(--dim);
@@ -803,7 +815,7 @@
 
 <div class="app">
   <div class="top">
-    <div class="brand">フィンスト<span class="dot">.</span></div>
+    <img class="brand-img" src="assets/logo.png" alt="FINGER STRATEGY">
     <div class="net-tag" id="netTag"></div>
     <button class="icon-btn" id="soundBtn" onclick="toggleSound()" aria-label="音を消す">♪</button>
     <button class="icon-btn" id="cardsBtn" onclick="openCards()" aria-label="カード一覧">カ</button>
@@ -932,7 +944,7 @@ const RESPONSE_MS = 15000;          // 応答フェーズの制限時間（§4�
 const CARDS = {
   1:  {name:"反転",     timing:"self",    text:"相手と指の本数を入れ替える。拡張状態は本人に残る"},
   2:  {name:"シールド", timing:"defense", text:"受けるダメージが1になる"},
-  3:  {name:"隕石",     timing:"self",    text:"相手の生きている手に好きな数字を足す。防御割り込みでは防げない"},
+  3:  {name:"隕石",     timing:"self",    text:"自分の生きている手を、その手の上限まで好きなだけ増やす"},
   4:  {name:"召喚",     timing:"self",    text:"片方が0の時、そこに1本〜自分の上限までの好きな数字を生み出す"},
   5:  {name:"拡張",     timing:"self",    text:"自分の片手を選ぶ。その手だけ5本まで持てるようになり、アウトになる数が6に変わる（永久）"},
   6:  {name:"倍返指",   timing:"attack",  text:"このカード自体が攻撃を実行する。ダメージ2倍"},
@@ -1355,7 +1367,7 @@ function showLobby(mode){
 
   if(mode === "waiting"){
     el.innerHTML = `
-      <div class="brand">フィンスト<span class="dot">.</span></div>
+      <img class="brand-img lobby-logo" src="assets/logo.png" alt="FINGER STRATEGY">
       <div class="tag">ともだちを待っています</div>
       <div class="code-box">
         <div class="lead">ルームコード</div>
@@ -1372,7 +1384,7 @@ function showLobby(mode){
   }
 
   el.innerHTML = `
-    <div class="brand">フィンスト<span class="dot">.</span></div>
+    <img class="brand-img lobby-logo" src="assets/logo.png" alt="FINGER STRATEGY">
     <div class="tag">2人対戦・能力カードあり</div>
     <div class="lobby-about">
       自分の手で相手の手をタップして本数を押しつけ、<b>相手の両手をアウトにしたら勝ち</b>。
@@ -1882,6 +1894,8 @@ function usable(id, p){
   if(online && (p !== seat || S.turn !== seat)) return {ok:false, why:"相手の番"};
   if(S.phase !== "normal" || S.step) return {ok:false, why:TIMING_LABEL[c.timing]};
   if(id === 4 && !S.hands[p].includes(0)) return {ok:false, why:"0の手が無い"};
+  if(id === 3 && ![0,1].some(h => S.hands[p][h] > 0 && S.hands[p][h] < S.max[p][h]))
+    return {ok:false, why:"増やせる手が無い"};
   return {ok:true, why:""};
 }
 
@@ -2231,8 +2245,12 @@ function useCard(id){
     case 10: return runCopy(me);
     case 5:  return beginStep({id:5, who:me, need:"ownHand", expandTarget:true,
                 text:`<span class="sname">拡張</span> どちらの手を強くしますか？`});
-    case 3:  return beginStep({id:3, who:me, need:"enemyHand",
-                text:`<span class="sname">隕石</span> どの手に落としますか？`});
+    case 3:  {
+      const can = [0,1].some(h => S.hands[me][h] > 0 && S.hands[me][h] < S.max[me][h]);
+      if(!can) return;
+      return beginStep({id:3, who:me, need:"ownHand",
+                text:`<span class="sname">隕石</span> どの手を増やしますか？`});
+    }
     case 4:  return beginStep({id:4, who:me, need:"number",
                 text:`<span class="sname">召喚</span> 生み出す本数を選んでください`});
     case 6:  return beginStep({id:6, who:me, need:"ownHand",
@@ -2295,11 +2313,12 @@ function stepGotHand(p,h){
     return runExpand(st.who, h);
   }
 
-  if(st.id === 3){                       // 隕石：手を決めたら数を選ぶ
+  if(st.id === 3){                       // 隕石：自分の手を決めたら増やす数を選ぶ
+    if(S.hands[p][h] >= S.max[p][h]) return;   // すでに上限の手は選べない
     st.data.target = [p,h];
     st.need = "number";
     document.getElementById("stepText").innerHTML =
-      `<span class="sname">隕石</span> ${NAMES[p]}の${hn(h)}手（${S.hands[p][h]}本）に足す数を選んでください`;
+      `<span class="sname">隕石</span> ${hn(h)}手（${S.hands[p][h]}本）を何本まで増やしますか？`;
     render();
     openNumbers();
     return;
@@ -2385,20 +2404,10 @@ function openNumbers(){
   if(st.id === 3){
     const [tp, th] = st.data.target;
     const before = S.hands[tp][th];
-    title.textContent = `足す数を選ぶ（${NAMES[tp]}の${hn(th)}手・${outDesc(tp, th)}）`;
-    if(S.mode === "deep"){
-      /* 繰り下がるので、基準以上の数は必ずどれかと同じ結果になる。
-         重複を出さないよう 1〜基準-1 だけ並べ、結果を添える。 */
-      for(let n = 1; n < S.outAt[tp][th]; n++){
-        const after = norm(before + n, tp, th);
-        choices.push({n, label:`+${n}`, note: after === 0 ? "アウト" : `${after}本`, kill: after === 0});
-      }
-    } else {
-      /* 届いた時点で結果は同じなので、生き残る数だけ並べ、最後に「アウト」を1つ置く */
-      for(let n = 1; before + n < S.outAt[tp][th]; n++){
-        choices.push({n, label:`+${n}`, note:`${before + n}本`, kill:false});
-      }
-      choices.push({n: S.outAt[tp][th] - before, label:"アウト", note:"落とす", kill:true});
+    title.textContent = `増やす本数を選ぶ（${hn(th)}手・上限${S.max[tp][th]}）`;
+    /* 自分の手を増やすカードなので、上限を超える選択肢は出さない */
+    for(let n = 1; before + n <= S.max[tp][th]; n++){
+      choices.push({n, label:`+${n}`, note:`${before + n}本`, kill:false});
     }
   } else if(st.id === 4){
     const sh = S.hands[st.who].indexOf(0);
@@ -2422,21 +2431,19 @@ function openNumbers(){
 function stepGotNumber(n){
   const st = S.step;
 
-  if(st.id === 3){                       // 隕石：防御割り込みの対象外なので即解決
+  if(st.id === 3){                       // 隕石：自分の手を増やす
     const [tp, th] = st.data.target;
     const me = st.who;
     S.step = null; closeStepUI();
     busy = true;
+    const before = S.hands[tp][th];
     spend(me, 3).then(() => {
+      S.hands[tp][th] = before + n;
       render();
-      const before = S.hands[tp][th];
-      const after = norm(before + n, tp, th);
-      return strike(null, tp, th, n, after).then(() => {
-        render();
-        if(checkDeath()) return;
-        endTurn(`<b>${NAMES[me]}</b>の隕石が ${NAMES[tp]}の${hn(th)}手を直撃。`
-          + `<span class="sub">${before} + ${n} = ${before + n} → ${after === 0 ? "アウト" : after + "本"}（${outDesc(tp, th)}・防御不可）</span>`);
-      });
+      return poof(tp, th, "+" + n, "heal");
+    }).then(() => {
+      render();
+      endTurn(`<b>${NAMES[me]}</b>の隕石。<span class="sub">${hn(th)}手が ${before} → ${before + n}本になった</span>`);
     });
     return;
   }
