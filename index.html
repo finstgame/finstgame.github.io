@@ -977,7 +977,7 @@
    2a カード基盤 / 2b 自ターンカード / 2c 攻撃カード＋拡張 / 2d 防御割り込み
    ========================================================= */
 
-const NAMES = ["プレイヤー1", "プレイヤー2"];
+let NAMES = ["プレイヤー1", "プレイヤー2"];
 const HAND_SIZE = 3;
 const RESPONSE_MS = 15000;          // 応答フェーズの制限時間（§4）。一度5秒に縮めたが短すぎたため戻した
 
@@ -1388,8 +1388,20 @@ function explain(e){
 
 function startOffline(){
   online = false; seat = 0; room = null;
+  cpuStop();
   reset();
   enterGame();
+}
+
+/* CPU戦。1台版と同じ作りで、相手の手だけCPUが指す */
+function startCPU(){
+  online = false; seat = 0; room = null;
+  cpuStop();
+  reset();
+  S.cpu = true;
+  NAMES[1] = "CPU";
+  enterGame();
+  cpuTick();
 }
 
 function enterGame(){
@@ -1460,7 +1472,10 @@ function showLobby(mode){
       <button onclick="joinRoom(document.getElementById('codeInput').value)">参加</button>
     </div>
     <div class="lobby-err" id="lobbyErr"></div>
-    <h3>ひとつの端末で遊ぶ</h3>
+    <h3>ひとりで遊ぶ</h3>
+    <button class="ghost" style="width:100%" onclick="startCPU()">CPUと対戦</button>
+
+    <h3>ひとつの端末で2人で遊ぶ</h3>
     <button class="ghost" style="width:100%" onclick="startOffline()">1台を回して対戦</button>
     <div class="lobby-note">オンラインは、相手の手札が見えません。1台版は交代で回して遊ぶ用です。</div>`;
   const inp = document.getElementById("codeInput");
@@ -1623,6 +1638,9 @@ function resign(){
 }
 
 function toLobby(){
+  cpuStop();
+  if(S) S.cpu = false;
+  NAMES[1] = "プレイヤー2";
   document.getElementById("win").classList.remove("open");
   closeConfirm(); closeInfo();
   if(online) leaveRoom();
@@ -1651,7 +1669,10 @@ function restart(){
 }
 
 function reset(){
+  const wasCpu = S && S.cpu;
   S = Object.assign(newState(), {sel:null, pick:null, step:null});
+  S.cpu = wasCpu || false;
+  if(!S.cpu) NAMES[1] = "プレイヤー2";
   busy = false;
   stopTimer(); clearTimeout(watchdog);
   document.getElementById("win").classList.remove("open");
@@ -2016,6 +2037,7 @@ function enterDefense(){
   say(S.msg);
   commit();                                  // 相手の端末に応答フェーズと締切を渡す
   if(iRespond()) openSheet(); else startWatchdog();
+  cpuTick();
 }
 
 function openSheet(){
@@ -2561,6 +2583,209 @@ async function runExpand(me, h){
   endTurn(`<b>${NAMES[me]}</b>が${hn(h)}手を拡張。<span class="sub">その手だけ5本まで持てるようになり、${outDesc(me, h)}に変わった（永久）</span>`);
 }
 
+
+/* =========================================================
+   CPU
+   人と同じ入口（tap / useCard / respond …）だけを叩く。
+   判定ロジックを別に持たないので、ルールを変えてもCPUは追従する。
+   ========================================================= */
+let cpuTimer = null;
+
+const CPU_DELAY = { think: 750, step: 480, defend: 900 };
+
+/* この攻撃で相手の手が落ちるか */
+function wouldOut(dmg, dp, dh){
+  return S.hands[dp][dh] > 0 && norm(S.hands[dp][dh] + dmg, dp, dh) === 0;
+}
+/* その手を失うと負けるか */
+function isLastHand(p, h){
+  return S.hands[p][h] > 0 && S.hands[p][1-h] === 0;
+}
+
+function cpuStop(){ clearTimeout(cpuTimer); cpuTimer = null; }
+
+/* CPUの番が来ていれば動かす */
+function cpuTick(){
+  if(!S.cpu || S.over || online) return;
+  cpuStop();
+  if(S.phase === "defense" && S.pending && S.pending.responder === 1){
+    cpuTimer = setTimeout(cpuDefend, CPU_DELAY.defend);
+    return;
+  }
+  if(S.phase === "normal" && S.turn === 1 && !busy){
+    cpuTimer = setTimeout(cpuAct, CPU_DELAY.think);
+  }
+}
+
+/* 攻め手を全部並べて点を付ける */
+function cpuAttackPlans(){
+  const me = 1, opp = 0, out = [];
+  [0,1].forEach(mh => {
+    if(S.hands[me][mh] <= 0) return;
+    [0,1].forEach(oh => {
+      if(S.hands[opp][oh] <= 0) return;
+      const dmg = S.hands[me][mh];
+      const kills = wouldOut(dmg, opp, oh);
+      let score = kills ? 100 : 10;
+      if(kills && isLastHand(opp, oh)) score = 1000;      // とどめ
+      if(!kills) score += norm(S.hands[opp][oh] + dmg, opp, oh);  // 相手を上限に近づける
+      out.push({kind:"attack", mh, oh, score});
+    });
+  });
+  return out;
+}
+
+function cpuAct(){
+  if(!S.cpu || S.over || online || S.phase !== "normal" || S.turn !== 1 || busy) return;
+  const me = 1, opp = 0;
+  const plans = cpuAttackPlans();
+
+  /* 手札から使えるカードを評価する */
+  const cards = S.cards[me].filter(id => usable(id, me).ok);
+  const has = id => cards.includes(id);
+
+  /* 勝てる一手があるなら迷わない */
+  const finisher = plans.find(p => p.score >= 1000);
+  if(finisher) return cpuAttack(finisher);
+
+  /* ダブルは両手で2回殴れるので、2つとも落とせるなら最優先 */
+  if(has(8)){
+    const live = [0,1].filter(h => S.hands[me][h] > 0);
+    const theirs = [0,1].filter(h => S.hands[opp][h] > 0);
+    if(live.length === 2 && theirs.length === 2){
+      const a = wouldOut(S.hands[me][live[0]], opp, theirs[0]);
+      const b = wouldOut(S.hands[me][live[1]], opp, theirs[1]);
+      if(a && b) return cpuUseDouble(theirs);
+    }
+  }
+  /* 倍返指で落とせるなら使う */
+  if(has(6)){
+    for(const mh of [0,1]){
+      if(S.hands[me][mh] <= 0) continue;
+      for(const oh of [0,1]){
+        if(wouldOut(S.hands[me][mh] * 2, opp, oh)) return cpuUseTwice(mh, oh);
+      }
+    }
+  }
+  /* 片手が落ちていれば召喚で戻す */
+  if(has(4) && S.hands[me].includes(0)) return cpuUseSummon();
+  /* 相手の方が本数が多いならコピー */
+  if(has(10)){
+    const mine = S.hands[me][0] + S.hands[me][1];
+    const theirs = S.hands[opp][0] + S.hands[opp][1];
+    const copied = S.hands[opp].map((v,h) => norm(v, me, h));
+    if(theirs > mine + 1 && copied.every(v => v > 0)) return cpuUseCard(10);
+  }
+  /* 自分の方が不利なら反転（受け取った側で落ちない場合だけ） */
+  if(has(1)){
+    const mine = S.hands[me][0] + S.hands[me][1];
+    const theirs = S.hands[opp][0] + S.hands[opp][1];
+    const after = S.hands[opp].map((v,h) => norm(v, me, h));
+    if(theirs > mine + 1 && after.some(v => v > 0)) return cpuUseCard(1);
+  }
+  /* 序盤なら拡張で伸ばす */
+  if(has(5) && S.used[me].length === 0){
+    const h = S.hands[me][0] >= S.hands[me][1] ? 0 : 1;
+    return cpuUseExpand(h);
+  }
+  /* 隕石で自分の手を伸ばす */
+  if(has(3)){
+    const h = [0,1].find(x => S.hands[me][x] > 0 && S.hands[me][x] < S.max[me][x]);
+    if(h !== undefined) return cpuUseMeteor(h);
+  }
+
+  /* 攻撃で落とせるならそれ。無ければ分配で立て直す */
+  const best = plans.sort((a,b) => b.score - a.score)[0];
+  if(best && best.score >= 100) return cpuAttack(best);
+
+  const opts = splitOptions();
+  if(opts.length && Math.random() < 0.35){
+    /* 0の手を復活させる分け方を優先する */
+    const revive = opts.find(([a,b]) => a > 0 && b > 0);
+    const pick = revive || opts[Math.floor(Math.random()*opts.length)];
+    return applySplit(pick[0], pick[1]);
+  }
+  if(best) return cpuAttack(best);
+  if(opts.length) return applySplit(opts[0][0], opts[0][1]);
+}
+
+/* ---- 実際の操作（人と同じ入口を叩く）---- */
+function cpuAttack(p){
+  S.sel = [1, p.mh]; render();
+  cpuTimer = setTimeout(() => tap(0, p.oh), CPU_DELAY.step);
+}
+function cpuUseCard(id){ useCard(id); }
+function cpuUseExpand(h){
+  useCard(5);
+  cpuTimer = setTimeout(() => tap(1, h), CPU_DELAY.step);
+}
+function cpuUseSummon(){
+  useCard(4);
+  cpuTimer = setTimeout(() => {
+    const opts = [...document.querySelectorAll('#numOpts .opt')];
+    if(opts.length) opts[opts.length-1].click();     // 出せるだけ出す
+  }, CPU_DELAY.step);
+}
+function cpuUseMeteor(h){
+  useCard(3);
+  cpuTimer = setTimeout(() => {
+    tap(1, h);
+    cpuTimer = setTimeout(() => {
+      const opts = [...document.querySelectorAll('#numOpts .opt')];
+      if(opts.length) opts[opts.length-1].click();   // 上限まで伸ばす
+    }, CPU_DELAY.step);
+  }, CPU_DELAY.step);
+}
+function cpuUseTwice(mh, oh){
+  useCard(6);
+  cpuTimer = setTimeout(() => {
+    tap(1, mh);
+    cpuTimer = setTimeout(() => tap(0, oh), CPU_DELAY.step);
+  }, CPU_DELAY.step);
+}
+function cpuUseDouble(theirs){
+  useCard(8);
+  cpuTimer = setTimeout(() => {
+    tap(0, theirs[0]);
+    cpuTimer = setTimeout(() => tap(0, theirs[1]), CPU_DELAY.step);
+  }, CPU_DELAY.step);
+}
+
+/* ---- 防御割り込み ---- */
+function cpuDefend(){
+  if(!S.cpu || online || S.phase !== "defense" || !S.pending || S.pending.responder !== 1) return;
+  const p = S.pending, me = 1;
+  const fatal = wouldOut(p.damage, me, p.toHand);
+  const last  = isLastHand(me, p.toHand);
+  const has = id => S.cards[me].includes(id);
+
+  /* 負ける一撃なら全力で止める */
+  if(fatal && last){
+    if(has(7)) return respondCounter();
+    if(has(9)) return respondHeal();
+    if(has(2) && !wouldOut(1, me, p.toHand)) return respond(2);
+  }
+  /* 手が1本落ちるだけでも、返せるなら返す */
+  if(fatal){
+    if(has(7) && p.damage >= 3) return respondCounter();
+    if(has(2) && !wouldOut(1, me, p.toHand)) return respond(2);
+    if(has(9)) return respondHeal();
+  }
+  passDefense();
+}
+function respondCounter(){ respond(7); }   /* 返し先は自動なので追加操作は要らない */
+function respondHeal(){
+  respond(9);
+  cpuTimer = setTimeout(() => {
+    /* 上限に余裕がある手へ。無ければ落ちている手を戻す */
+    const me = 1;
+    let h = [0,1].find(x => S.hands[me][x] > 0 && S.hands[me][x] < S.max[me][x]);
+    if(h === undefined) h = [0,1].find(x => S.hands[me][x] === 0);
+    if(h === undefined) h = 0;
+    tap(1, h);
+  }, CPU_DELAY.step);
+}
+
 /* ================= 分配 ================= */
 function splitOptions(){
   if(!S) return [];
@@ -2630,6 +2855,7 @@ function endTurn(msg){
   say(S.msg);
   busy = false;
   commit();
+  cpuTick();
 }
 
 /* 両手ともアウトなら負け。自分のカードで自滅した場合も同じ扱い。 */
@@ -2686,6 +2912,7 @@ function recapHTML(){
 function showWin(){
   const w = S.winner;
   if(w === null || w === undefined) return;
+  cpuStop();
   /* 決着したら、手番の呼び出しも切断の警告も引っ込める */
   document.title = BASE_TITLE;
   wasMine = false;
