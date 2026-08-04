@@ -721,8 +721,23 @@
     border:1.5px solid #2A3550; border-radius:5px;
     padding:1px 6px; margin-left:7px; white-space:nowrap;
   }
-  .crow[data-timing="defense"]{border-color:color-mix(in srgb, var(--wood) 34%, #22314E);}
+  /* 防御カードであることはタグの色で示す。枠を光らせると「持っている札」に見える */
   .crow[data-timing="defense"] .tm{color:var(--wood); border-color:color-mix(in srgb, var(--wood) 45%, transparent);}
+  /* 光っているのは手札だけ、という約束にする */
+  .crow[data-mine="true"]{
+    border-color:var(--bone);
+    background:color-mix(in srgb, var(--bone) 7%, var(--panel));
+  }
+  .crow[data-spent="true"]{opacity:.5;}
+  .crow-head{display:flex; align-items:center; flex-wrap:wrap; gap:0;}
+  .tag-mine, .tag-spent{
+    font-size:9.5px; font-weight:700; letter-spacing:.06em;
+    border-radius:5px; padding:1px 6px; margin-left:7px; white-space:nowrap;
+  }
+  .tag-mine{background:var(--bone); color:#0D1522;}
+  .tag-spent{background:#2A3550; color:var(--dim);}
+  .cards-lead{font-size:12px; line-height:1.6; color:var(--dim); margin-bottom:12px;}
+  .cards-lead b{color:var(--bone);}
   .crow .tx{font-size:12.5px; line-height:1.55; color:#B9C6DC; margin-top:4px;}
 
   /* ---------- ロビー（Phase 3） ---------- */
@@ -1733,17 +1748,35 @@ function openInfo(){
 }
 function closeInfo(){ document.getElementById("info").classList.remove("open"); }
 
+/* いま画面を見ている人の手札。ロビーなら null */
+function viewerIdx(){
+  if(!S || document.getElementById("lobby").classList.contains("open")) return null;
+  if(online) return seat;
+  if(S.cpu) return 0;
+  return S.turn;                       // 1台を回して遊ぶときは手番の人
+}
+
 /* カードの効果は対戦中に一番よく見たいので、遊び方とは別の画面にしてある */
 function openCards(){
   closeInfo();
+  const v = viewerIdx();
+  const inHand = v === null ? [] : (S.cards[v] || []);
+  const used   = v === null ? [] : (S.used[v]  || []);
   document.getElementById("cardsBody").innerHTML = `
+    ${v !== null ? `<p class="cards-lead">白く光っているのが<b>いまの手札</b>です。</p>` : ""}
     <div class="clist">
       ${Object.keys(CARDS).map(Number).map(id => {
         const c = CARDS[id];
-        return `<div class="crow" data-timing="${c.timing}">
+        const mine = inHand.includes(id);
+        const spent = used.includes(id);
+        return `<div class="crow" data-timing="${c.timing}" data-mine="${mine}" data-spent="${spent}">
           <div class="n">${String(id).padStart(2,"0")}</div>
           <div>
-            <div><span class="nm">${c.name}</span><span class="tm">${TIMING_LABEL[c.timing]}</span></div>
+            <div class="crow-head"><span class="nm">${c.name}</span>
+              <span class="tm">${TIMING_LABEL[c.timing]}</span>
+              ${mine ? `<span class="tag-mine">手札</span>` : ""}
+              ${spent ? `<span class="tag-spent">使用済み</span>` : ""}
+            </div>
             <div class="tx">${c.text}</div>
           </div>
         </div>`;
@@ -2107,7 +2140,10 @@ function cardsHTML(p){
     return `<div class="hand-row" data-empty="true">手札なし</div>`;
   }
 
-  const faceUp = online ? p === seat : (p === S.turn && !S.over);
+  /* 1台を回して遊ぶときだけ「手番側が表向き」。CPU戦は相手の札を見せない */
+  const faceUp = online ? (p === seat)
+               : S.cpu ? (p === 0)
+               : (p === S.turn && !S.over);
   if(!faceUp){
     return `<div class="hand-row" aria-label="${NAMES[p]}の手札 ${hand.length}枚">
       ${hand.map(() => `<div class="card back" aria-hidden="true"></div>`).join("")}
