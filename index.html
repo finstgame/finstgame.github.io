@@ -1871,10 +1871,11 @@ function restart(){
 }
 
 function reset(){
-  const wasCpu = S && S.cpu;
+  /* CPUかどうかは呼んだ側が決める（startCPU が後から立てる）。
+     ここで引き継ぐと、CPU戦から1台版へ移ったときにCPUのまま残る。 */
   S = Object.assign(newState(), {sel:null, pick:null, step:null});
-  S.cpu = wasCpu || false;
-  if(!S.cpu) NAMES[1] = "プレイヤー2";
+  S.cpu = false;
+  NAMES[1] = "プレイヤー2";
   busy = false;
   stopTimer(); clearTimeout(watchdog);
   document.getElementById("win").classList.remove("open");
