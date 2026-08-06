@@ -1133,7 +1133,7 @@ const CARDS = {
   2:  {name:"シールド", timing:"defense", text:"受けるダメージが1になる"},
   3:  {name:"隕石",     timing:"self",    text:"自分の生きている手を、その手の上限まで好きなだけ増やす"},
   4:  {name:"召喚",     timing:"self",    text:"片方が0の時、そこに1本〜自分の上限までの好きな数字を生み出す"},
-  5:  {name:"拡張",     timing:"self",    text:"自分の片手を選ぶ。その手だけ5本まで持てるようになり、アウトになる数が6に変わる（永久）"},
+  5:  {name:"拡張",     timing:"self",    text:"自分の片手を選ぶ。その手だけ5本まで持てるようになり、アウトになる数が6に変わる。ただしその手が一度アウトになると解ける"},
   6:  {name:"倍返指",   timing:"attack",  text:"このカード自体が攻撃を実行する。ダメージ2倍"},
   7:  {name:"カウンター",timing:"defense",text:"攻撃を無効化し、攻撃してきた手にそのまま返す。重ねがけ可"},
   8:  {name:"ダブル",   timing:"attack",  text:"両手それぞれで1回ずつ攻撃する。同じ手を2回は狙えない"},
@@ -1851,7 +1851,7 @@ function openInfo(){
       <li>10種から3枚。<b>各1回きり</b>で補充なし</li>
       <li><b>相手の手札は見えない</b>（枚数だけ分かる）</li>
       <li>「防御割り込み」は<b>相手に攻撃されたとき</b>に使う。15秒で自動パス</li>
-      <li><b>拡張</b>は<b>選んだ片手だけ</b>、5でアウトが6でアウトになる。その手は5本まで持てる</li>
+      <li><b>拡張</b>は<b>選んだ片手だけ</b>、5でアウトが6でアウトになる。その手は5本まで持てる。<b>その手が一度アウトになると解ける</b></li>
     </ul>
 
     <h4>オンライン</h4>
@@ -2718,6 +2718,7 @@ async function resolvePending(){
 
   note(p.from, `${p.damage}ダメージ → ${NAMES[p.to]}の${hn(p.toHand)}手が`
     + (after === 0 ? "アウト" : `${after}本`));
+  dropExpandOnOut();          // 2回目の攻撃は、解けた後の基準で計算する
   S.pending = null;
   if(checkDeath()) return;
 
@@ -3089,7 +3090,7 @@ async function runExpand(me, h){
   render();
   await poof(me, h, "拡張", "heal");
   render();
-  endTurn(`<b>${NAMES[me]}</b>が${hn(h)}手を拡張。<span class="sub">その手だけ5本まで持てるようになり、${outDesc(me, h)}に変わった（永久）</span>`);
+  endTurn(`<b>${NAMES[me]}</b>が${hn(h)}手を拡張。<span class="sub">その手だけ5本まで持てるようになり、${outDesc(me, h)}に変わった（落ちると解ける）</span>`);
 }
 
 
@@ -3493,6 +3494,8 @@ function closeAllPanels(){
 
 function endTurn(msg){
   SFX.duck(false);
+  const lost = dropExpandOnOut();
+  if(lost) msg += `<span class="sub">${NAMES[lost.p]}の${hn(lost.h)}手が落ちたので、拡張は解けた</span>`;
   S.doubleQueue = null;
   /* 保険：どの経路から来ても、両手アウトのプレイヤーが居るまま手番を回さない */
   if(dead(0) || dead(1)){ S.pending = null; S.step = null; checkDeath(); return; }
@@ -3513,7 +3516,23 @@ function endTurn(msg){
 }
 
 /* 両手ともアウトなら負け。自分のカードで自滅した場合も同じ扱い。 */
+/* 拡張した手が一度アウトになったら、その手の拡張は失われる。
+   分配や召喚で戻ってきても、また4本まで・5でアウトの手に戻る。 */
+function dropExpandOnOut(){
+  let lost = null;
+  [0,1].forEach(p => [0,1].forEach(h => {
+    if(S.hands[p][h] === 0 && S.expanded[p][h]){
+      S.expanded[p][h] = false;
+      S.max[p][h] = 4;
+      S.outAt[p][h] = 5;
+      lost = {p, h};
+    }
+  }));
+  return lost;
+}
+
 function checkDeath(actor){
+  dropExpandOnOut();
   const d0 = dead(0), d1 = dead(1);
   if(!d0 && !d1) return false;
   /* 同時に両者が落ちることは本来起きないが、起きた場合は行動した側の負けにする */
