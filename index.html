@@ -740,6 +740,110 @@
   .cards-lead b{color:var(--bone);}
   .crow .tx{font-size:12.5px; line-height:1.55; color:#B9C6DC; margin-top:4px;}
 
+
+  /* ---------- カード使用時の演出 ---------- */
+  .fx{
+    position:fixed; inset:0; z-index:25;
+    pointer-events:none;
+    display:none;
+    align-items:center;
+    overflow:hidden;
+  }
+  .fx.on{display:flex;}
+  .fx-band{
+    width:100%;
+    padding:14px 0;
+    background:linear-gradient(90deg,
+      transparent 0%,
+      color-mix(in srgb, var(--fx-c) 78%, #0A1220) 12%,
+      color-mix(in srgb, var(--fx-c) 92%, #0A1220) 50%,
+      color-mix(in srgb, var(--fx-c) 78%, #0A1220) 88%,
+      transparent 100%);
+    box-shadow:0 0 34px color-mix(in srgb, var(--fx-c) 45%, transparent);
+    text-align:center;
+    transform:translateX(-110%) skewY(-2deg);
+    animation:fxBand .95s cubic-bezier(.22,.9,.3,1) forwards;
+  }
+  @keyframes fxBand{
+    0%{transform:translateX(-110%) skewY(-2deg); opacity:0;}
+    18%{transform:translateX(0) skewY(-2deg); opacity:1;}
+    72%{transform:translateX(0) skewY(-2deg); opacity:1;}
+    100%{transform:translateX(110%) skewY(-2deg); opacity:0;}
+  }
+  .fx-name{
+    font-weight:900;
+    font-size:clamp(26px, 9vw, 40px);
+    letter-spacing:.1em;
+    color:#0D1522;
+    text-shadow:0 2px 0 color-mix(in srgb, #fff 45%, transparent);
+  }
+  .fx-name .sub{
+    display:block; font-size:11px; letter-spacing:.2em;
+    color:color-mix(in srgb, #0D1522 65%, transparent); margin-top:2px;
+  }
+
+  /* 盤の上に出す個別の効果 */
+  .fx-ring, .fx-shield, .fx-beam, .fx-spark, .fx-swap{
+    position:absolute; pointer-events:none;
+  }
+  .fx-ring{
+    border-radius:50%;
+    border:3px solid var(--fx-c);
+    animation:fxRing .62s ease-out forwards;
+  }
+  @keyframes fxRing{
+    from{transform:scale(.25); opacity:.95;}
+    to{transform:scale(2.3); opacity:0;}
+  }
+  .fx-shield{
+    border-radius:14px;
+    border:3px solid var(--fx-c);
+    background:color-mix(in srgb, var(--fx-c) 18%, transparent);
+    animation:fxShield .8s ease-out forwards;
+  }
+  @keyframes fxShield{
+    0%{transform:scale(.7); opacity:0;}
+    25%{transform:scale(1.06); opacity:1;}
+    70%{transform:scale(1); opacity:.85;}
+    100%{transform:scale(1); opacity:0;}
+  }
+  .fx-beam{
+    background:linear-gradient(90deg, transparent, var(--fx-c), transparent);
+    height:4px; border-radius:2px;
+    transform-origin:left center;
+    animation:fxBeam .5s ease-out forwards;
+    box-shadow:0 0 12px var(--fx-c);
+  }
+  @keyframes fxBeam{
+    0%{opacity:0; transform:scaleX(0);}
+    30%{opacity:1; transform:scaleX(1);}
+    100%{opacity:0; transform:scaleX(1);}
+  }
+  .fx-spark{
+    width:6px; height:6px; border-radius:50%;
+    background:var(--fx-c);
+    box-shadow:0 0 8px var(--fx-c);
+    animation:fxSpark .8s ease-out forwards;
+  }
+  @keyframes fxSpark{
+    from{transform:translate(0,0) scale(1); opacity:1;}
+    to{transform:translate(var(--dx), var(--dy)) scale(.2); opacity:0;}
+  }
+  .fx-swap{
+    inset:0;
+    background:linear-gradient(180deg,
+      color-mix(in srgb, var(--fx-c) 26%, transparent),
+      transparent 45%,
+      color-mix(in srgb, var(--fx-c) 26%, transparent));
+    animation:fxSwap .7s ease-out forwards;
+  }
+  @keyframes fxSwap{
+    0%{opacity:0;} 30%{opacity:1;} 100%{opacity:0;}
+  }
+
+  @media (prefers-reduced-motion: reduce){
+    .fx{display:none !important;}
+  }
   /* ---------- ロビー（Phase 3） ---------- */
   .lobby{
     position:fixed; inset:0;
@@ -947,6 +1051,11 @@
   </div>
 </div>
 
+<!-- カード使用時の演出 -->
+<div class="fx" id="fx" aria-hidden="true">
+  <div class="fx-band" id="fxBand"><span class="fx-name" id="fxName"></span></div>
+</div>
+
 <!-- 遊び方 -->
 <div class="info" id="info">
   <div class="info-inner">
@@ -1048,7 +1157,7 @@ const NET = {
 /* 紛らわしい文字（I L O 0 1）を除いた6文字 */
 const CODE_ALPHABET = "ABCDEFGHJKMNPQRSTUVWXYZ23456789";
 /* 同期する項目。sel / pick / step は各自の手元の操作なので送らない */
-const SYNC = ["hands","max","outAt","expanded","mode","cards","used","turn","phase","pending","over","winner","why","msg","hit","hist","seq"];
+const SYNC = ["hands","max","outAt","expanded","mode","cards","used","turn","phase","pending","over","winner","why","msg","hit","play","hist","seq"];
 
 /* アウトの条件。部屋を作った側が決め、相手はそれを受け取る。
    quick … その数以上でアウト（手が落ちやすく、決着が早い）
@@ -1113,6 +1222,7 @@ function newState(){
     msg: "",
     hit: null,                          // 直前の着弾。受信側が突き出し演出を再現するのに使う
     hist: [],                           // 直前の手。決着後に「何で負けたか」を出すのに使う
+    play: null,                         // 直前に使われたカード。相手の端末でも演出を出すため
     seq: 0
   };
 }
@@ -1151,6 +1261,11 @@ function applyRemote(snap){
   animateDiff(before);
   notifyTurn();
   renderGone();
+  /* 相手が使ったカードの演出（自分が出した分は seq で弾かれるので二重に出ない）*/
+  if(S.play && S.play.n !== lastPlayN){
+    lastPlayN = S.play.n;
+    if(S.play.p !== seat) playCardFx(S.play.id, S.play.p, S.play.detail);
+  }
   if(S.over){ showWin(); }
   else if(S.phase === "defense" && S.pending){
     if(S.pending.responder === seat){
@@ -1219,6 +1334,7 @@ function startWatchdog(){
    タブを閉じられた・電池が切れた場合、state は何も変わらないので
    「考えています」のまま永久に待つことになる。それを防ぐ。 */
 let oppHere = true, oppGoneAt = 0, goneTimer = null;
+let lastPlayN = 0;
 
 function readPresence(){
   if(!online || !chan) return;
@@ -1439,6 +1555,7 @@ function startCPU(){
 }
 
 function enterGame(){
+  SFX.wake(); SFX.bgmStart();
   document.getElementById("lobby").classList.remove("open");
   document.getElementById("waitBar").classList.remove("open");
   wasMine = false;
@@ -1691,6 +1808,7 @@ function boot(){
   sb = window.supabase.createClient(NET.url, NET.key, { auth:{ persistSession:false } });
   S = newState();                              // ロビー表示中の空打ち防止用
   const code = (location.hash || "").replace("#","").trim().toUpperCase();
+  paintSoundBtn();
   showLobby();
   if(code.length === 6){
     document.getElementById("codeInput").value = code;
@@ -1826,6 +1944,7 @@ function resign(){
 }
 
 function toLobby(){
+  SFX.bgmStop();
   cpuStop();
   if(S) S.cpu = false;
   NAMES[1] = "プレイヤー2";
@@ -1920,98 +2039,213 @@ function buzz(ms){
    音声ファイルは持たず、その場で合成する。割り箸を叩く音が芯。
    ブラウザの制限で最初の操作までは鳴らせないので、初回のタップで起こす。 */
 const SFX = (() => {
-  let ctx = null, noise = null;
-  let on = true;
-  try{ on = localStorage.getItem("finst_sound") !== "off"; }catch(e){}
+  let ctx = null, noise = null, verb = null;
+  let master = null, sfxBus = null, bgmBus = null, wetBus = null;
+  /* all … 効果音＋BGM / sfx … 効果音だけ / off … 無音 */
+  let level = "all";
+  try{ const v = localStorage.getItem("finst_sound"); if(["all","sfx","off"].includes(v)) level = v; }catch(e){}
 
   function ac(){
     if(!ctx){
       const C = window.AudioContext || window.webkitAudioContext;
       if(!C) return null;
       try{ ctx = new C(); }catch(e){ return null; }
+      buildChain();
     }
     if(ctx.state === "suspended") ctx.resume();
     return ctx;
   }
+
+  /* 残響を通すと一気に厚くなる。短いノイズから簡易インパルスを作る */
+  function makeVerb(sec, decay){
+    const n = Math.floor(ctx.sampleRate * sec);
+    const buf = ctx.createBuffer(2, n, ctx.sampleRate);
+    for(let ch=0; ch<2; ch++){
+      const d = buf.getChannelData(ch);
+      for(let i=0;i<n;i++) d[i] = (Math.random()*2-1) * Math.pow(1 - i/n, decay);
+    }
+    return buf;
+  }
+  function buildChain(){
+    master = ctx.createGain(); master.gain.value = 0.9; master.connect(ctx.destination);
+    sfxBus = ctx.createGain(); sfxBus.gain.value = 1;   sfxBus.connect(master);
+    bgmBus = ctx.createGain(); bgmBus.gain.value = 0;   bgmBus.connect(master);
+    verb = ctx.createConvolver(); verb.buffer = makeVerb(1.6, 2.4);
+    wetBus = ctx.createGain(); wetBus.gain.value = 0.32;
+    verb.connect(wetBus); wetBus.connect(master);
+  }
   function noiseBuf(){
     if(noise) return noise;
-    const n = Math.floor(ctx.sampleRate * 0.25);
+    const n = Math.floor(ctx.sampleRate * 0.5);
     noise = ctx.createBuffer(1, n, ctx.sampleRate);
     const d = noise.getChannelData(0);
     for(let i=0;i<n;i++) d[i] = Math.random()*2 - 1;
     return noise;
   }
-  /* 減衰する包絡線をつないで鳴らす */
-  function play(src, at, attack, decay, peak, dest){
+
+  /* ---- 部品 ---- */
+  function env(at, a, d, peak, dest, send){
     const g = ctx.createGain();
     g.gain.setValueAtTime(0.0001, at);
-    g.gain.exponentialRampToValueAtTime(peak, at + attack);
-    g.gain.exponentialRampToValueAtTime(0.0001, at + attack + decay);
-    src.connect(g); g.connect(dest || ctx.destination);
-    src.start(at); src.stop(at + attack + decay + 0.02);
+    g.gain.exponentialRampToValueAtTime(Math.max(0.0002, peak), at + a);
+    g.gain.exponentialRampToValueAtTime(0.0001, at + a + d);
+    g.connect(dest || sfxBus);
+    if(send){ const w = ctx.createGain(); w.gain.value = send; g.connect(w); w.connect(verb); }
+    return g;
   }
-  function tone(freq, at, dur, peak, type){
+  function tone(f, at, dur, peak, type, send, f2){
     const o = ctx.createOscillator();
     o.type = type || "sine";
-    o.frequency.setValueAtTime(freq, at);
-    play(o, at, 0.005, dur, peak);
+    o.frequency.setValueAtTime(f, at);
+    if(f2) o.frequency.exponentialRampToValueAtTime(Math.max(1,f2), at + dur);
+    const g = env(at, 0.006, dur, peak, null, send);
+    o.connect(g); o.start(at); o.stop(at + dur + 0.05);
+    return o;
   }
-  /* 木を叩いた音：帯域を絞ったノイズ＋低い正弦 */
-  function knock(freq, at, dur, peak){
-    const s = ctx.createBufferSource(); s.buffer = noiseBuf();
+  function hiss(at, dur, peak, lo, hi, send, sweepTo){
+    const sN = ctx.createBufferSource(); sN.buffer = noiseBuf();
     const bp = ctx.createBiquadFilter();
-    bp.type = "bandpass"; bp.frequency.setValueAtTime(freq * 5, at); bp.Q.value = 1.4;
-    const g = ctx.createGain();
-    g.gain.setValueAtTime(0.0001, at);
-    g.gain.exponentialRampToValueAtTime(peak, at + 0.004);
-    g.gain.exponentialRampToValueAtTime(0.0001, at + dur);
-    s.connect(bp); bp.connect(g); g.connect(ctx.destination);
-    s.start(at); s.stop(at + dur + 0.02);
-    tone(freq, at, dur * 0.9, peak * 0.7);
+    bp.type = "bandpass"; bp.Q.value = 1.1;
+    bp.frequency.setValueAtTime(lo, at);
+    bp.frequency.exponentialRampToValueAtTime(sweepTo || hi, at + dur);
+    const g = env(at, 0.004, dur, peak, null, send);
+    sN.connect(bp); bp.connect(g);
+    sN.start(at); sN.stop(at + dur + 0.05);
   }
+  /* 木を叩く音。芯の低音＋アタックのノイズ */
+  function knock(f, at, dur, peak, send){
+    hiss(at, dur*0.55, peak*0.9, f*6, f*2.2, send || 0.18);
+    tone(f, at, dur, peak*0.85, "sine", send || 0.18, f*0.55);
+    tone(f*1.5, at, dur*0.5, peak*0.3, "triangle", 0);
+  }
+  const N = { C4:262, D4:294, E4:330, F4:349, G4:392, A4:440, B4:494,
+              C5:523, D5:587, E5:659, F5:698, G5:784, A5:880, C6:1046 };
+  function chord(at, freqs, dur, peak, type, send){
+    freqs.forEach((f,i) => tone(f, at + i*0.012, dur, peak, type || "sine", send == null ? 0.3 : send));
+  }
+  function run(at, freqs, step, dur, peak, type, send){
+    freqs.forEach((f,i) => tone(f, at + i*step, dur, peak, type || "sine", send == null ? 0.25 : send));
+  }
+
+  /* ---- BGM ---- */
+  let bgmOn = false, bgmTimer = null, bar = 0, nextAt = 0;
+  const BPM = 88, BEAT = 60 / BPM;
+  /* 4小節。暗めのマイナーで、盤面の色に合う程度の主張に抑える */
+  const BASS = [110, 110, 98, 87];                 // A2 A2 G2 F2
+  const ARP  = [[440,523,659],[440,523,659],[392,494,587],[349,440,523]];
+
+  function scheduleBar(at, i){
+    const root = BASS[i % 4], arp = ARP[i % 4];
+    /* ベース */
+    tone(root, at, BEAT*1.6, 0.16, "triangle", 0.12);
+    tone(root, at + BEAT*2, BEAT*1.4, 0.12, "triangle", 0.12);
+    /* パッド */
+    chord(at, arp.map(f => f/2), BEAT*3.6, 0.035, "sine", 0.6);
+    /* アルペジオ */
+    for(let k=0;k<8;k++){
+      const f = arp[k % 3] * (k >= 4 ? 2 : 1);
+      tone(f, at + k*BEAT*0.5, BEAT*0.42, 0.028, "triangle", 0.35);
+    }
+    /* 軽い刻み */
+    for(let k=0;k<4;k++) hiss(at + k*BEAT, 0.05, 0.02, 6000, 9000, 0.1);
+    hiss(at + BEAT*2, 0.12, 0.05, 180, 120, 0.15);
+  }
+  function bgmLoop(){
+    if(!bgmOn || !ctx) return;
+    const ahead = ctx.currentTime + 0.6;
+    while(nextAt < ahead){
+      scheduleBar(nextAt, bar++);
+      nextAt += BEAT * 4;
+    }
+  }
+  function bgmStart(){
+    if(level !== "all" || !ac() || bgmOn) return;
+    bgmOn = true; bar = 0; nextAt = ctx.currentTime + 0.15;
+    bgmBus.gain.cancelScheduledValues(ctx.currentTime);
+    bgmBus.gain.setValueAtTime(0.0001, ctx.currentTime);
+    bgmBus.gain.exponentialRampToValueAtTime(0.5, ctx.currentTime + 1.2);
+    clearInterval(bgmTimer); bgmTimer = setInterval(bgmLoop, 120);
+    bgmLoop();
+  }
+  function bgmStop(){
+    if(!ctx || !bgmOn) return;
+    bgmOn = false;
+    clearInterval(bgmTimer); bgmTimer = null;
+    bgmBus.gain.cancelScheduledValues(ctx.currentTime);
+    bgmBus.gain.setValueAtTime(bgmBus.gain.value, ctx.currentTime);
+    bgmBus.gain.exponentialRampToValueAtTime(0.0001, ctx.currentTime + 0.6);
+  }
+  /* 決着や応答フェーズでは、音楽を一段下げて手前の音を通す */
+  function duck(on){
+    if(!ctx || !bgmOn) return;
+    bgmBus.gain.cancelScheduledValues(ctx.currentTime);
+    bgmBus.gain.linearRampToValueAtTime(on ? 0.18 : 0.5, ctx.currentTime + 0.25);
+  }
+
+  const ok = () => level !== "off" && !!ac();
+
+  /* ---- カードごとの音 ---- */
+  const CARD_SFX = {
+    1: t => { hiss(t, .34, .10, 500, 4000, .4); tone(660, t, .3, .09, "sawtooth", .4, 220);
+              tone(220, t+.18, .3, .08, "sawtooth", .4, 660); },                       // 反転
+    2: t => { chord(t, [N.C5, N.G5, N.C6], .5, .075, "sine", .55);
+              tone(N.C6*2, t+.03, .25, .03, "sine", .6); },                            // シールド
+    3: t => { tone(120, t, .42, .10, "sawtooth", .35, 900); hiss(t, .42, .07, 300, 5000, .3);
+              knock(200, t+.36, .2, .22, .3); },                                       // 隕石
+    4: t => { run(t, [N.C4, N.E4, N.G4, N.C5, N.E5], .06, .28, .075, "triangle", .45); }, // 召喚
+    5: t => { tone(N.C4, t, .5, .09, "triangle", .5, N.G4);
+              run(t+.08, [N.G4, N.C5, N.E5], .07, .4, .05, "sine", .55); },            // 拡張
+    6: t => { knock(190, t, .1, .3, .2); knock(150, t+.09, .16, .3, .25);
+              tone(90, t+.06, .3, .12, "sawtooth", .2); },                             // 倍返指
+    7: t => { tone(300, t, .28, .10, "square", .4, 900); hiss(t+.2, .2, .12, 2000, 6000, .4);
+              knock(240, t+.26, .18, .26, .3); },                                      // カウンター
+    8: t => { knock(210, t, .1, .28, .2); knock(210, t+.13, .14, .28, .22); },         // ダブル
+    9: t => { chord(t, [N.F4, N.A4, N.C5, N.F5], .6, .06, "sine", .6); },              // ヒール
+    10:t => { tone(N.E5, t, .12, .07, "square", .35); tone(N.A5, t+.09, .2, .06, "square", .4);
+              hiss(t, .18, .05, 3000, 7000, .3); }                                     // コピー
+  };
 
   const api = {
-    get enabled(){ return on; },
-    toggle(){
-      on = !on;
-      try{ localStorage.setItem("finst_sound", on ? "on" : "off"); }catch(e){}
-      if(on){ api.wake(); api.tap(); }
-      return on;
+    get level(){ return level; },
+    cycle(){
+      level = level === "all" ? "sfx" : level === "sfx" ? "off" : "all";
+      try{ localStorage.setItem("finst_sound", level); }catch(e){}
+      if(level === "off") bgmStop();
+      else { ac(); api.tap(); }
+      return level;
     },
-    wake(){ if(on) ac(); },
+    wake(){ if(level !== "off") ac(); },
+    bgmStart, bgmStop, duck,
 
-    tap(){   if(!on || !ac()) return; knock(320, ctx.currentTime, 0.05, 0.16); },
-    card(){  if(!on || !ac()) return;
-             const t = ctx.currentTime;
-             const s = ctx.createBufferSource(); s.buffer = noiseBuf();
-             const hp = ctx.createBiquadFilter(); hp.type = "highpass"; hp.frequency.value = 900;
-             const g = ctx.createGain();
-             g.gain.setValueAtTime(0.0001, t);
-             g.gain.exponentialRampToValueAtTime(0.12, t + 0.02);
-             g.gain.exponentialRampToValueAtTime(0.0001, t + 0.16);
-             s.connect(hp); hp.connect(g); g.connect(ctx.destination);
-             s.start(t); s.stop(t + 0.2); },
-    hit(){   if(!on || !ac()) return; knock(190, ctx.currentTime, 0.10, 0.30); },
-    /* アウト：折れて落ちるので、続けて2回、下がりながら */
-    out(){   if(!on || !ac()) return;
-             const t = ctx.currentTime;
-             knock(210, t, 0.09, 0.30);
-             knock(140, t + 0.075, 0.16, 0.26);
-             tone(90, t + 0.09, 0.28, 0.10, "triangle"); },
-    heal(){  if(!on || !ac()) return;
-             const t = ctx.currentTime;
-             tone(520, t, 0.12, 0.10); tone(780, t + 0.07, 0.16, 0.09); },
-    turn(){  if(!on || !ac()) return;
-             const t = ctx.currentTime;
-             tone(660, t, 0.11, 0.12); tone(880, t + 0.10, 0.18, 0.11); },
-    /* 応答フェーズの残り2秒 */
-    tick(){  if(!on || !ac()) return; tone(1250, ctx.currentTime, 0.05, 0.06, "square"); },
-    win(){   if(!on || !ac()) return;
-             const t = ctx.currentTime;
-             [523, 659, 784, 1046].forEach((f,i) => tone(f, t + i*0.09, 0.22, 0.11)); },
-    lose(){  if(!on || !ac()) return;
-             const t = ctx.currentTime;
-             [392, 330, 262].forEach((f,i) => tone(f, t + i*0.11, 0.28, 0.10, "triangle")); }
+    tap(){  if(!ok()) return; knock(330, ctx.currentTime, .05, .14, .15); },
+    card(id){
+      if(!ok()) return;
+      const t = ctx.currentTime;
+      hiss(t, .12, .08, 1200, 4000, .25);                     // 引き抜く音
+      (CARD_SFX[id] || (() => {}))(t + 0.05);
+    },
+    hit(){  if(!ok()) return;
+            const t = ctx.currentTime;
+            knock(185 + Math.random()*20, t, .11, .3, .22);
+            tone(70, t, .18, .12, "sine", .15, 45); },
+    out(){  if(!ok()) return;
+            const t = ctx.currentTime;
+            knock(215, t, .09, .3, .25); knock(140, t+.075, .17, .27, .3);
+            tone(88, t+.09, .34, .11, "triangle", .3, 50);
+            hiss(t+.06, .3, .05, 900, 200, .4); },
+    heal(){ if(!ok()) return; chord(ctx.currentTime, [N.G4, N.B4, N.D5], .4, .055, "sine", .5); },
+    turn(){ if(!ok()) return;
+            const t = ctx.currentTime;
+            tone(N.E5, t, .12, .09, "sine", .35); tone(N.A5, t+.1, .2, .08, "sine", .4); },
+    tick(){ if(!ok()) return; tone(1250, ctx.currentTime, .05, .05, "square", .1); },
+    win(){  if(!ok()) return;
+            const t = ctx.currentTime; duck(true);
+            run(t, [N.C5, N.E5, N.G5, N.C6], .1, .5, .09, "sine", .6);
+            chord(t+.42, [N.C5, N.E5, N.G5, N.C6], .9, .06, "triangle", .7); },
+    lose(){ if(!ok()) return;
+            const t = ctx.currentTime; duck(true);
+            run(t, [N.G4, N.E4, N.C4], .13, .5, .085, "triangle", .6);
+            tone(131, t+.3, .9, .07, "sine", .6); }
   };
   return api;
 })();
@@ -2019,12 +2253,21 @@ const SFX = (() => {
 /* 最初の操作で音を起こす（ブラウザの自動再生制限） */
 document.addEventListener("pointerdown", () => SFX.wake(), { once:true });
 
-function toggleSound(){
+const SOUND_LABEL = { all:"音楽と効果音", sfx:"効果音だけ", off:"音を消している" };
+function paintSoundBtn(){
   const el = document.getElementById("soundBtn");
-  const on = SFX.toggle();
-  el.textContent = on ? "♪" : "♪";
-  el.dataset.off = String(!on);
-  el.setAttribute("aria-label", on ? "音を消す" : "音を出す");
+  if(!el) return;
+  const lv = SFX.level;
+  el.textContent = lv === "off" ? "♪" : lv === "sfx" ? "♪" : "♬";
+  el.dataset.off = String(lv === "off");
+  el.setAttribute("aria-label", SOUND_LABEL[lv] + "（押すと切り替え）");
+  el.title = SOUND_LABEL[lv];
+}
+function toggleSound(){
+  const lv = SFX.cycle();
+  paintSoundBtn();
+  if(lv === "all" && !document.getElementById("lobby").classList.contains("open")) SFX.bgmStart();
+  say(`音: ${SOUND_LABEL[lv]}`);
 }
 
 /* 受け取る側の基準で判定する。0 になった手はアウト。 */
@@ -2242,6 +2485,7 @@ function enterDefense(){
   render();
   say(S.msg);
   commit();                                  // 相手の端末に応答フェーズと締切を渡す
+  SFX.duck(true);
   if(iRespond()) openSheet(); else startWatchdog();
   cpuTick();
 }
@@ -2340,7 +2584,7 @@ function respond(id){
   stopTimer();                                   // カードを切った時点で時間切れの対象外にする
 
   if(id === 2){                                  // シールド：ダメージが1になる
-    consume(r, 2);
+    consume(r, 2, {h: p.toHand});
     p.damage = 1;
     p.modifiers.push("shield");
     closeSheet();
@@ -2350,7 +2594,7 @@ function respond(id){
   }
 
   if(id === 9){                                  // ヒール：無効化して自分の手に足す
-    consume(r, 9);
+    consume(r, 9, {h: p.toHand});
     closeSheet();
     S.phase = "resolving";
     beginStep({id:9, who:r, need:"ownHand", healTarget:true, amount:p.damage,
@@ -2359,7 +2603,7 @@ function respond(id){
   }
 
   if(id === 7){                                  // カウンター：無効化して、攻撃してきた手に返す
-    consume(r, 7);
+    consume(r, 7, {h: p.toHand});
     closeSheet();
     S.phase = "resolving";
     /* 返し先は攻撃してきた手。選ばせると、迷っているあいだに攻撃側の
@@ -2546,18 +2790,20 @@ function useCard(id){
   }
 }
 
-function consume(p, id){
+function consume(p, id, detail){
   S.cards[p] = S.cards[p].filter(x => x !== id);
   S.used[p].push(id);
   note(p, `「${CARDS[id].name}」を使った`);
+  S.play = { id, p, detail: detail || null, n: (S.play ? S.play.n : 0) + 1 };
+  playCardFx(id, p, detail);
 }
 
 /* 消費のアニメーションを挟んでから消す */
-async function spend(p, id){
+async function spend(p, id, detail){
   const el = document.querySelector(`.board .card[data-id="${id}"]`);
-  SFX.card();
+  SFX.card(id);
   if(el && p === S.turn){ el.classList.add("spent"); await wait(340); }
-  consume(p, id);
+  consume(p, id, detail);
 }
 
 /* ---- 入力ステップ ---- */
@@ -2619,7 +2865,7 @@ function stepGotHand(p,h){
     const me = st.who, dmg = S.hands[me][st.data.mine] * 2;
     S.step = null; closeStepUI();
     busy = true;                       // 消費アニメ中に次の操作を受け付けない
-    spend(me, 6).then(() => {
+    spend(me, 6, {from: st.data.mine, to: h}).then(() => {
       busy = false;
       render();
       declareAttack({from:me, fromHand:st.data.mine, to:p, toHand:h, damage:dmg, kind:"twice"});
@@ -2645,7 +2891,7 @@ function stepGotHand(p,h){
     const hits = st.data.hits;
     S.step = null; closeStepUI();
     busy = true;
-    spend(me, 8).then(async () => {
+    spend(me, 8, {from: hits[0].mine, to: hits[0].theirs}).then(async () => {
       busy = false;
       render();
       /* 1回目を通常の攻撃として宣言し、2回目は解決後に続ける */
@@ -2720,7 +2966,7 @@ function stepGotNumber(n){
     S.step = null; closeStepUI();
     busy = true;
     const before = S.hands[tp][th];
-    spend(me, 3).then(() => {
+    spend(me, 3, {h: th}).then(() => {
       S.hands[tp][th] = before + n;
       render();
       return poof(tp, th, "+" + n, "heal");
@@ -2736,7 +2982,7 @@ function stepGotNumber(n){
     const h = S.hands[me].indexOf(0);
     S.step = null; closeStepUI();
     busy = true;
-    spend(me, 4).then(() => {
+    spend(me, 4, {h}).then(() => {
       S.hands[me][h] = n;
       render();
       return poof(me, h, "+" + n, "heal");
@@ -2779,7 +3025,7 @@ async function runCopy(me){
 
 async function runExpand(me, h){
   busy = true;
-  await spend(me, 5);
+  await spend(me, 5, {h});
   S.max[me][h] = 5;
   S.outAt[me][h] = 6;
   S.expanded[me][h] = true;
@@ -2992,6 +3238,150 @@ function respondHeal(){
   }, CPU_DELAY.step);
 }
 
+
+/* =========================================================
+   カード使用時の演出
+   band … 名前のカットイン（全カード共通）
+   盤の上の効果は、カードごとに使い分ける
+   ========================================================= */
+const FX = {
+  1:  {c:"#9B8CFF", label:"入れ替え", kind:"swap"},
+  2:  {c:"#7FD3FF", label:"防いだ",   kind:"shield"},
+  3:  {c:"#FFB454", label:"増やす",   kind:"rise"},
+  4:  {c:"#5EE6A8", label:"呼び出す", kind:"rise"},
+  5:  {c:"#E3B778", label:"広がる",   kind:"ring"},
+  6:  {c:"#FF7A5F", label:"2倍",      kind:"beam"},
+  7:  {c:"#FF5F7E", label:"はね返す", kind:"ring"},
+  8:  {c:"#FF9F45", label:"2回攻撃",  kind:"beam"},
+  9:  {c:"#6BE39A", label:"回復",     kind:"rise"},
+  10: {c:"#8FD0FF", label:"写しとる", kind:"beam"}
+};
+
+function reduceMotion(){
+  return window.matchMedia("(prefers-reduced-motion: reduce)").matches;
+}
+function handEl(p,h){ return document.querySelector(`.hand[data-p="${p}"][data-h="${h}"]`); }
+
+/* カード名のカットイン */
+function cardCutIn(id){
+  if(reduceMotion()) return;
+  const f = FX[id]; if(!f) return;
+  const wrap = document.getElementById("fx");
+  const band = document.getElementById("fxBand");
+  document.documentElement.style.setProperty("--fx-c", f.c);
+  document.getElementById("fxName").innerHTML =
+    `${CARDS[id].name}<span class="sub">${f.label}</span>`;
+  wrap.classList.add("on");
+  band.style.animation = "none"; void band.offsetWidth;   // 連続で使っても必ず流れるように
+  band.style.animation = "";
+  clearTimeout(cardCutIn._t);
+  cardCutIn._t = setTimeout(() => wrap.classList.remove("on"), 980);
+}
+
+/* 盤の上に置く効果 */
+function fxAt(el, build){
+  if(!el || reduceMotion()) return;
+  const host = el.closest(".board") || document.querySelector(".app");
+  const hb = host.getBoundingClientRect(), b = el.getBoundingClientRect();
+  const node = build(b, hb);
+  if(!node) return;
+  host.style.position = host.style.position || "relative";
+  host.appendChild(node);
+  setTimeout(() => node.remove(), 900);
+}
+function fxRing(p,h,color){
+  const el = handEl(p,h); if(!el) return;
+  fxAt(el, (b,hb) => {
+    const d = document.createElement("div");
+    d.className = "fx-ring";
+    const size = Math.max(b.width, b.height) * 0.9;
+    d.style.cssText = `--fx-c:${color};width:${size}px;height:${size}px;` +
+      `left:${b.left-hb.left + b.width/2 - size/2}px;top:${b.top-hb.top + b.height/2 - size/2}px;`;
+    return d;
+  });
+}
+function fxShield(p,h,color){
+  const el = handEl(p,h); if(!el) return;
+  fxAt(el, (b,hb) => {
+    const d = document.createElement("div");
+    d.className = "fx-shield";
+    d.style.cssText = `--fx-c:${color};width:${b.width+10}px;height:${b.height+10}px;` +
+      `left:${b.left-hb.left-5}px;top:${b.top-hb.top-5}px;`;
+    return d;
+  });
+}
+/* 手から立ち上る粒 */
+function fxRise(p,h,color){
+  const el = handEl(p,h); if(!el || reduceMotion()) return;
+  const host = el.closest(".board"); if(!host) return;
+  const hb = host.getBoundingClientRect(), b = el.getBoundingClientRect();
+  for(let i=0;i<7;i++){
+    const d = document.createElement("div");
+    d.className = "fx-spark";
+    const x = b.left - hb.left + 10 + Math.random()*(b.width-20);
+    const y = b.top - hb.top + b.height - 10;
+    d.style.cssText = `--fx-c:${color};left:${x}px;top:${y}px;` +
+      `--dx:${(Math.random()*2-1)*18}px;--dy:${-40-Math.random()*46}px;` +
+      `animation-delay:${i*45}ms;`;
+    host.appendChild(d);
+    setTimeout(() => d.remove(), 900 + i*45);
+  }
+}
+/* 手から手へ走る線（盤をまたぐので .app に置く） */
+function fxBeam(p1,h1,p2,h2,color){
+  const a = handEl(p1,h1), b2 = handEl(p2,h2);
+  if(!a || !b2 || reduceMotion()) return;
+  const app = document.querySelector(".app");
+  const ab = a.getBoundingClientRect(), bb = b2.getBoundingClientRect(), ap = app.getBoundingClientRect();
+  const x1 = ab.left-ap.left+ab.width/2, y1 = ab.top-ap.top+ab.height/2;
+  const x2 = bb.left-ap.left+bb.width/2, y2 = bb.top-ap.top+bb.height/2;
+  const len = Math.hypot(x2-x1, y2-y1), ang = Math.atan2(y2-y1, x2-x1) * 180/Math.PI;
+  const d = document.createElement("div");
+  d.className = "fx-beam";
+  d.style.cssText = `--fx-c:${color};width:${len}px;left:${x1}px;top:${y1}px;` +
+    `transform:rotate(${ang}deg);`;
+  app.style.position = app.style.position || "relative";
+  app.appendChild(d);
+  setTimeout(() => d.remove(), 700);
+}
+function fxSwap(color){
+  if(reduceMotion()) return;
+  [0,1].forEach(p => {
+    const host = document.getElementById("board"+p);
+    if(!host) return;
+    const d = document.createElement("div");
+    d.className = "fx-swap";
+    d.style.cssText = `--fx-c:${color};`;
+    host.appendChild(d);
+    setTimeout(() => d.remove(), 780);
+  });
+}
+
+/* カードが使われたときに、そのカードらしい効果を出す */
+function playCardFx(id, p, detail){
+  const f = FX[id]; if(!f) return;
+  cardCutIn(id);
+  const c = f.c, opp = foe(p);
+  const live = h => S.hands[p][h] > 0;
+  switch(id){
+    case 1:  fxSwap(c); break;                                   // 反転
+    case 2:  fxShield(p, detail && detail.h != null ? detail.h : 0, c); break;
+    case 3:  fxRise(p, detail && detail.h != null ? detail.h : (live(0)?0:1), c); break;
+    case 4:  fxRise(p, detail && detail.h != null ? detail.h : 0, c); break;
+    case 5:  fxRing(p, detail && detail.h != null ? detail.h : 0, c); break;
+    case 6:  if(detail && detail.from != null && detail.to != null)
+               fxBeam(p, detail.from, opp, detail.to, c);
+             else fxRing(opp, 0, c);
+             break;
+    case 7:  fxRing(p, detail && detail.h != null ? detail.h : 0, c);
+             setTimeout(() => fxRing(opp, detail && detail.to != null ? detail.to : 0, c), 180);
+             break;
+    case 8:  [0,1].forEach((h,i) => setTimeout(() => fxBeam(p, h, opp, 1-h, c), i*140)); break;
+    case 9:  fxRise(p, detail && detail.h != null ? detail.h : 0, c); break;
+    case 10: [0,1].forEach((h,i) => setTimeout(() => fxBeam(opp, h, p, h, c), i*120)); break;
+  }
+}
+
 /* ================= 分配 ================= */
 function splitOptions(){
   if(!S) return [];
@@ -3045,6 +3435,7 @@ function closeAllPanels(){
 }
 
 function endTurn(msg){
+  SFX.duck(false);
   S.doubleQueue = null;
   /* 保険：どの経路から来ても、両手アウトのプレイヤーが居るまま手番を回さない */
   if(dead(0) || dead(1)){ S.pending = null; S.step = null; checkDeath(); return; }
