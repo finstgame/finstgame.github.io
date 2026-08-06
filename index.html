@@ -2127,32 +2127,89 @@ const SFX = (() => {
     freqs.forEach((f,i) => tone(f, at + i*step, dur, peak, type || "sine", send == null ? 0.25 : send));
   }
 
-  /* ---- BGM ---- */
+  /* ---- BGM ----
+     速いマイナーのチップチューン。16小節（A8＋B8）で回す。
+     ベースはオクターブ刻み、上物は矩形波、裏でハイハットが走る。 */
   let bgmOn = false, bgmTimer = null, bar = 0, nextAt = 0;
-  const BPM = 88, BEAT = 60 / BPM;
-  /* 4小節。暗めのマイナーで、盤面の色に合う程度の主張に抑える */
-  const BASS = [110, 110, 98, 87];                 // A2 A2 G2 F2
-  const ARP  = [[440,523,659],[440,523,659],[392,494,587],[349,440,523]];
+  const BPM = 152, BEAT = 60 / BPM, EIGHTH = BEAT / 2;
+  const HZ = m => 440 * Math.pow(2, (m - 69) / 12);   // MIDI番号 → 周波数
+
+  /* 8分音符×8＝1小節。0は休み */
+  const LEAD = [
+    [69,72,76,81,76,72,69,72],  [71,74,77,74,71,67,71,74],
+    [74,77,81,77,74,69,74,77],  [72,76,79,76,72,69,72,76],
+    [72,76,79,84,79,76,72,76],  [74,77,81,77,74,71,74,77],
+    [76,80,83,80,76,71,76,80],  [80,76,71,76,80,83,80,76],
+    /* B: 一段上げて畳みかける */
+    [81,84,88,84,81,76,81,84],  [83,81,79,81,83,84,83,81],
+    [77,81,84,81,77,72,77,81],  [76,79,84,79,76,72,76,79],
+    [74,77,81,86,81,77,74,77],  [76,80,83,88,83,80,76,80],
+    [81, 0,81, 0,84, 0,88, 0],  [83, 0,80, 0,76, 0,71, 0]
+  ];
+  const ROOT = [45,45,50,50,48,48,52,52, 45,45,53,48,50,52,45,52];
+
+  function blip(f, at, dur, peak, type){
+    const o = ctx.createOscillator();
+    o.type = type || "square";
+    o.frequency.setValueAtTime(f, at);
+    const g = ctx.createGain();
+    g.gain.setValueAtTime(0.0001, at);
+    g.gain.exponentialRampToValueAtTime(peak, at + 0.008);
+    g.gain.exponentialRampToValueAtTime(0.0001, at + dur);
+    o.connect(g); g.connect(bgmBus);
+    const w = ctx.createGain(); w.gain.value = peak * 1.6; g.connect(w); w.connect(verb);
+    o.start(at); o.stop(at + dur + 0.03);
+  }
+  function drum(at, kind){
+    if(kind === "kick"){
+      const o = ctx.createOscillator(); o.type = "sine";
+      o.frequency.setValueAtTime(140, at);
+      o.frequency.exponentialRampToValueAtTime(45, at + 0.11);
+      const g = ctx.createGain();
+      g.gain.setValueAtTime(0.0001, at);
+      g.gain.exponentialRampToValueAtTime(0.11, at + 0.005);
+      g.gain.exponentialRampToValueAtTime(0.0001, at + 0.14);
+      o.connect(g); g.connect(bgmBus); o.start(at); o.stop(at + 0.18);
+      return;
+    }
+    const sN = ctx.createBufferSource(); sN.buffer = noiseBuf();
+    const bp = ctx.createBiquadFilter();
+    const snare = kind === "snare";
+    bp.type = snare ? "bandpass" : "highpass";
+    bp.frequency.value = snare ? 1900 : 8500;
+    bp.Q.value = snare ? 0.8 : 1;
+    const g = ctx.createGain();
+    const dur = snare ? 0.13 : 0.035, pk = snare ? 0.055 : 0.014;
+    g.gain.setValueAtTime(0.0001, at);
+    g.gain.exponentialRampToValueAtTime(pk, at + 0.004);
+    g.gain.exponentialRampToValueAtTime(0.0001, at + dur);
+    sN.connect(bp); bp.connect(g); g.connect(bgmBus);
+    if(snare){ const w = ctx.createGain(); w.gain.value = pk*1.4; g.connect(w); w.connect(verb); }
+    sN.start(at); sN.stop(at + dur + 0.05);
+  }
 
   function scheduleBar(at, i){
-    const root = BASS[i % 4], arp = ARP[i % 4];
-    /* ベース */
-    tone(root, at, BEAT*1.6, 0.16, "triangle", 0.12);
-    tone(root, at + BEAT*2, BEAT*1.4, 0.12, "triangle", 0.12);
-    /* パッド */
-    chord(at, arp.map(f => f/2), BEAT*3.6, 0.035, "sine", 0.6);
-    /* アルペジオ */
+    const b = i % 16;
+    const lead = LEAD[b], root = ROOT[b];
     for(let k=0;k<8;k++){
-      const f = arp[k % 3] * (k >= 4 ? 2 : 1);
-      tone(f, at + k*BEAT*0.5, BEAT*0.42, 0.028, "triangle", 0.35);
+      const t = at + k*EIGHTH;
+      /* ベースはオクターブで刻む */
+      blip(HZ(root + (k % 2 ? 12 : 0)), t, EIGHTH*0.85, 0.06, "triangle");
+      /* 上物 */
+      if(lead[k]) blip(HZ(lead[k]), t, EIGHTH*0.78, 0.05, "square");
+      /* 裏で走るハイハット */
+      drum(t, "hat");
+      if(k === 0 || k === 4) drum(t, "kick");
+      if(k === 2 || k === 6) drum(t, "snare");
     }
-    /* 軽い刻み */
-    for(let k=0;k<4;k++) hiss(at + k*BEAT, 0.05, 0.02, 6000, 9000, 0.1);
-    hiss(at + BEAT*2, 0.12, 0.05, 180, 120, 0.15);
+    /* 8小節ごとに合いの手 */
+    if(b === 7 || b === 15){
+      [0,1,2].forEach(k => blip(HZ(ROOT[b]+24+k*4), at + BEAT*3 + k*EIGHTH*0.5, EIGHTH*0.5, 0.04, "square"));
+    }
   }
   function bgmLoop(){
     if(!bgmOn || !ctx) return;
-    const ahead = ctx.currentTime + 0.6;
+    const ahead = ctx.currentTime + 0.5;
     while(nextAt < ahead){
       scheduleBar(nextAt, bar++);
       nextAt += BEAT * 4;
@@ -2163,8 +2220,8 @@ const SFX = (() => {
     bgmOn = true; bar = 0; nextAt = ctx.currentTime + 0.15;
     bgmBus.gain.cancelScheduledValues(ctx.currentTime);
     bgmBus.gain.setValueAtTime(0.0001, ctx.currentTime);
-    bgmBus.gain.exponentialRampToValueAtTime(0.5, ctx.currentTime + 1.2);
-    clearInterval(bgmTimer); bgmTimer = setInterval(bgmLoop, 120);
+    bgmBus.gain.exponentialRampToValueAtTime(0.5, ctx.currentTime + 0.8);
+    clearInterval(bgmTimer); bgmTimer = setInterval(bgmLoop, 90);
     bgmLoop();
   }
   function bgmStop(){
@@ -2173,7 +2230,7 @@ const SFX = (() => {
     clearInterval(bgmTimer); bgmTimer = null;
     bgmBus.gain.cancelScheduledValues(ctx.currentTime);
     bgmBus.gain.setValueAtTime(bgmBus.gain.value, ctx.currentTime);
-    bgmBus.gain.exponentialRampToValueAtTime(0.0001, ctx.currentTime + 0.6);
+    bgmBus.gain.exponentialRampToValueAtTime(0.0001, ctx.currentTime + 0.4);
   }
   /* 決着や応答フェーズでは、音楽を一段下げて手前の音を通す */
   function duck(on){
