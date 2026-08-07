@@ -2136,7 +2136,7 @@ const SFX = (() => {
      フィル・残響を足していたから。すべて外して、
      細いパルス波・残響なし・一定の密度、という古い携帯ゲーム機の作りに寄せる。 */
   let bgmOn = false, bgmTimer = null, bar = 0, nextAt = 0;
-  const BPM = 132, BEAT = 60 / BPM, EIGHTH = BEAT / 2;
+  const BPM = 168, BEAT = 60 / BPM, EIGHTH = BEAT / 2;
   const HZ = m => 440 * Math.pow(2, (m - 69) / 12);
 
   /* ---- 音源：木を叩く音（木琴）----
@@ -2268,13 +2268,13 @@ const SFX = (() => {
     for(let k = 0; k < 8; k++){
       const t = at + k * EIGHTH;
       /* ベースは表拍と、その裏に軽く */
-      if(k % 2 === 0) bassNote(HZ(root), t, EIGHTH * 1.7, 0.16);
+      if(k % 2 === 0) bassNote(HZ(root), t, EIGHTH * 1.8, 0.16);
       else if(k === 3 || k === 7) bassNote(HZ(root + 12), t, EIGHTH * 0.9, 0.07);
       /* 旋律 */
-      if(mel[k]) mallet(HZ(mel[k]), t, 0.55, 0.10);
+      if(mel[k]) mallet(HZ(mel[k]), t, 0.42, 0.10);
       /* 低音のドラムは表拍に */
       if(k === 0 || k === 4) kick(t, k === 0 ? 0.5 : 0.38);
-      if(k % 2 === 1) tick(t, false);
+      tick(t, k % 2 === 1);
     }
   }
   function bgmLoop(){
