@@ -2147,15 +2147,18 @@ const SFX = (() => {
     for(let k = 1; k < n; k++) im[k] = (2 / (k * Math.PI)) * Math.sin(k * Math.PI * duty);
     return (pulseCache[duty] = ctx.createPeriodicWave(re, im));
   }
-  /* 音量も長さも揺らさない。揺らすと「歌って」しまう */
+  /* 音量も長さも揺らさない。揺らすと「歌って」しまう。
+     ただし 0 から一瞬で跳ねると「パツ」と鳴るので、
+     聞こえない長さ（2ms）だけ角を落とす。抑揚には聞こえない。 */
+  const EDGE = 0.002;
   function chip(f, at, dur, peak, duty){
     const o = ctx.createOscillator();
     o.setPeriodicWave(pulse(duty || 0.25));
     o.frequency.setValueAtTime(f, at);
     const g = ctx.createGain();
     g.gain.setValueAtTime(0, at);
-    g.gain.setValueAtTime(peak, at + 0.004);      // 立ち上がりを作らない
-    g.gain.setValueAtTime(peak, at + dur - 0.012);
+    g.gain.linearRampToValueAtTime(peak, at + EDGE);
+    g.gain.setValueAtTime(peak, at + Math.max(EDGE, dur - EDGE * 3));
     g.gain.linearRampToValueAtTime(0, at + dur);
     o.connect(g); g.connect(bgmBus);              // 残響へは送らない
     o.start(at); o.stop(at + dur + 0.02);
@@ -2166,8 +2169,12 @@ const SFX = (() => {
     hp.type = "highpass"; hp.frequency.value = 7000;
     const g = ctx.createGain();
     const pk = loud ? 0.016 : 0.007;
-    g.gain.setValueAtTime(pk, at);
+    /* GainNode の初期値は 1。0 にしておかないと、鳴り始めが素通りして弾ける */
+    g.gain.value = 0;
+    g.gain.setValueAtTime(0, at);
+    g.gain.linearRampToValueAtTime(pk, at + 0.0015);
     g.gain.exponentialRampToValueAtTime(0.0001, at + 0.028);
+    g.gain.linearRampToValueAtTime(0, at + 0.032);
     sN.connect(hp); hp.connect(g); g.connect(bgmBus);
     sN.start(at); sN.stop(at + 0.06);
   }
