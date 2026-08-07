@@ -763,12 +763,12 @@
     box-shadow:0 0 34px color-mix(in srgb, var(--fx-c) 45%, transparent);
     text-align:center;
     transform:translateX(-110%) skewY(-2deg);
-    animation:fxBand 2.5s cubic-bezier(.22,.9,.3,1) forwards;
+    animation:fxBand 1.5s cubic-bezier(.22,.9,.3,1) forwards;
   }
   @keyframes fxBand{
     0%{transform:translateX(-110%) skewY(-2deg); opacity:0;}
-    8%{transform:translateX(0) skewY(-2deg); opacity:1;}
-    86%{transform:translateX(0) skewY(-2deg); opacity:1;}
+    13%{transform:translateX(0) skewY(-2deg); opacity:1;}
+    80%{transform:translateX(0) skewY(-2deg); opacity:1;}
     100%{transform:translateX(110%) skewY(-2deg); opacity:0;}
   }
   .fx-name{
@@ -790,7 +790,7 @@
   .fx-ring{
     border-radius:50%;
     border:3px solid var(--fx-c);
-    animation:fxRing 1.15s ease-out forwards;
+    animation:fxRing .8s ease-out forwards;
   }
   @keyframes fxRing{
     from{transform:scale(.25); opacity:.95;}
@@ -800,7 +800,7 @@
     border-radius:14px;
     border:3px solid var(--fx-c);
     background:color-mix(in srgb, var(--fx-c) 18%, transparent);
-    animation:fxShield 1.5s ease-out forwards;
+    animation:fxShield 1s ease-out forwards;
   }
   @keyframes fxShield{
     0%{transform:scale(.7); opacity:0;}
@@ -812,7 +812,7 @@
     background:linear-gradient(90deg, transparent, var(--fx-c), transparent);
     height:4px; border-radius:2px;
     transform-origin:left center;
-    animation:fxBeam .9s ease-out forwards;
+    animation:fxBeam .65s ease-out forwards;
     box-shadow:0 0 12px var(--fx-c);
   }
   @keyframes fxBeam{
@@ -824,7 +824,7 @@
     width:6px; height:6px; border-radius:50%;
     background:var(--fx-c);
     box-shadow:0 0 8px var(--fx-c);
-    animation:fxSpark 1.4s ease-out forwards;
+    animation:fxSpark 1s ease-out forwards;
   }
   @keyframes fxSpark{
     from{transform:translate(0,0) scale(1); opacity:1;}
@@ -836,7 +836,7 @@
       color-mix(in srgb, var(--fx-c) 26%, transparent),
       transparent 45%,
       color-mix(in srgb, var(--fx-c) 26%, transparent));
-    animation:fxSwap 1.25s ease-out forwards;
+    animation:fxSwap .85s ease-out forwards;
   }
   @keyframes fxSwap{
     0%{opacity:0;} 30%{opacity:1;} 100%{opacity:0;}
@@ -2886,7 +2886,7 @@ async function spend(p, id, detail){
   const el = document.querySelector(`.board .card[data-id="${id}"]`);
   SFX.card(id);
   if(el && p === S.turn){ el.classList.add("spent"); await wait(340); }
-  await wait(440);          // カード名を読む間
+  await wait(300);          // カード名を読む間
   consume(p, id, detail);
 }
 
@@ -3190,6 +3190,93 @@ function cpuTick(){
   }
 }
 
+
+/* ---- 1手先読み ----
+   攻撃と分配を全部並べ、相手の最善の返しを受けたあとの形で評価する。
+   目先で殴って返り討ちに遭う手を選ばなくなる。 */
+function simNorm(v, outAt, mode){
+  return mode === "deep" ? ((v % outAt) + outAt) % outAt : (v >= outAt ? 0 : v);
+}
+function snapForSearch(){
+  return { h:[S.hands[0].slice(), S.hands[1].slice()],
+           o:[S.outAt[0].slice(), S.outAt[1].slice()],
+           mx:[S.max[0].slice(), S.max[1].slice()],
+           mode: S.mode };
+}
+function simMoves(st, p){
+  const out = [], opp = 1 - p;
+  [0,1].forEach(mh => {
+    if(st.h[p][mh] <= 0) return;
+    [0,1].forEach(oh => {
+      if(st.h[opp][oh] <= 0) return;
+      out.push({kind:"atk", mh, oh});
+    });
+  });
+  const tot = st.h[p][0] + st.h[p][1];
+  for(let a = 0; a <= st.mx[p][0]; a++){
+    const b = tot - a;
+    if(b < 0 || b > st.mx[p][1]) continue;
+    if(a === st.h[p][0] && b === st.h[p][1]) continue;
+    if(a === st.h[p][1] && b === st.h[p][0]) continue;
+    if(a === 0 && b === 0) continue;
+    out.push({kind:"split", a, b});
+  }
+  return out;
+}
+function simApply(st, p, mv){
+  const n = { h:[st.h[0].slice(), st.h[1].slice()], o:[st.o[0].slice(), st.o[1].slice()],
+              mx:[st.mx[0].slice(), st.mx[1].slice()], mode: st.mode };
+  if(mv.kind === "atk"){
+    const opp = 1 - p;
+    n.h[opp][mv.oh] = simNorm(n.h[opp][mv.oh] + n.h[p][mv.mh], n.o[opp][mv.oh], n.mode);
+  } else {
+    n.h[p][0] = mv.a; n.h[p][1] = mv.b;
+  }
+  return n;
+}
+const simAlive = (st,p) => (st.h[p][0] > 0 ? 1 : 0) + (st.h[p][1] > 0 ? 1 : 0);
+
+/* 落とされそうな手が何本あるか。これが読み合いの芯 */
+function simThreats(st, victim){
+  const atk = 1 - victim; let c = 0;
+  [0,1].forEach(vh => {
+    if(st.h[victim][vh] <= 0) return;
+    [0,1].forEach(ah => {
+      if(st.h[atk][ah] <= 0) return;
+      if(simNorm(st.h[victim][vh] + st.h[atk][ah], st.o[victim][vh], st.mode) === 0) c++;
+    });
+  });
+  return c;
+}
+function simEval(st, me){
+  const opp = 1 - me;
+  if(simAlive(st, opp) === 0) return 100000;
+  if(simAlive(st, me)  === 0) return -100000;
+  return (simAlive(st, me) - simAlive(st, opp)) * 300
+       + (simThreats(st, opp) - simThreats(st, me)) * 40
+       + ((st.h[opp][0] + st.h[opp][1]) - (st.h[me][0] + st.h[me][1])) * 2;
+}
+/* 自分の手 → 相手の最善の返し、まで見て一番マシな手を返す */
+function cpuSearch(){
+  const me = 1, st = snapForSearch();
+  let best = null, bestScore = -Infinity;
+  simMoves(st, me).forEach(mv => {
+    const after = simApply(st, me, mv);
+    let score;
+    if(simAlive(after, 0) === 0){
+      score = 100000;                                  // その場で勝てる
+    } else {
+      let worst = Infinity;
+      simMoves(after, 0).forEach(rm => {
+        worst = Math.min(worst, simEval(simApply(after, 0, rm), me));
+      });
+      score = worst === Infinity ? simEval(after, me) : worst;
+    }
+    if(score > bestScore){ bestScore = score; best = mv; }
+  });
+  return { mv: best, score: bestScore };
+}
+
 /* 攻め手を全部並べて点を付ける */
 function cpuAttackPlans(){
   const me = 1, opp = 0, out = [];
@@ -3256,10 +3343,16 @@ function cpuAct(){
     const after = S.hands[opp].map((v,h) => norm(v, me, h));
     if(theirs > mine + 1 && after.some(v => v > 0)) return cpuUseCard(1);
   }
-  /* 序盤なら拡張で伸ばす */
-  if(has(5) && S.used[me].length === 0){
-    const h = S.hands[me][0] >= S.hands[me][1] ? 0 : 1;
-    return cpuUseExpand(h);
+  /* 拡張は、その手がすぐ落とされないときだけ（落ちると解けるので） */
+  if(has(5)){
+    const st = snapForSearch();
+    const safe = [0,1].filter(h => S.hands[me][h] > 0 && !S.expanded[me][h] &&
+      ![0,1].some(ah => S.hands[opp][ah] > 0 &&
+        simNorm(S.hands[me][h] + S.hands[opp][ah], S.outAt[me][h], S.mode) === 0));
+    if(safe.length){
+      const h = safe.sort((a,b) => S.hands[me][b] - S.hands[me][a])[0];
+      return cpuUseExpand(h);
+    }
   }
   /* 相手が拡張していたら縮小で潰す */
   if(has(11)){
@@ -3278,18 +3371,15 @@ function cpuAct(){
     if(h !== undefined) return cpuUseMeteor(h);
   }
 
-  /* 攻撃で落とせるならそれ。無ければ分配で立て直す */
-  const best = plans.sort((a,b) => b.score - a.score)[0];
-  if(best && best.score >= 100) return cpuAttack(best);
-
-  const opts = splitOptions();
-  if(opts.length && Math.random() < 0.35){
-    /* 0の手を復活させる分け方を優先する */
-    const revive = opts.find(([a,b]) => a > 0 && b > 0);
-    const pick = revive || opts[Math.floor(Math.random()*opts.length)];
-    return applySplit(pick[0], pick[1]);
+  /* 攻撃と分配は先読みで決める */
+  const found = cpuSearch();
+  if(found.mv){
+    if(found.mv.kind === "atk") return cpuAttack({mh: found.mv.mh, oh: found.mv.oh});
+    return applySplit(found.mv.a, found.mv.b);
   }
+  const best = plans.sort((a,b) => b.score - a.score)[0];
   if(best) return cpuAttack(best);
+  const opts = splitOptions();
   if(opts.length) return applySplit(opts[0][0], opts[0][1]);
 }
 
@@ -3413,7 +3503,7 @@ function cardCutIn(id){
   band.style.animation = "none"; void band.offsetWidth;   // 連続で使っても必ず流れるように
   band.style.animation = "";
   clearTimeout(cardCutIn._t);
-  cardCutIn._t = setTimeout(() => wrap.classList.remove("on"), 2550);
+  cardCutIn._t = setTimeout(() => wrap.classList.remove("on"), 1550);
 }
 
 /* 盤の上に置く効果 */
@@ -3425,7 +3515,7 @@ function fxAt(el, build){
   if(!node) return;
   host.style.position = host.style.position || "relative";
   host.appendChild(node);
-  setTimeout(() => node.remove(), 1600);
+  setTimeout(() => node.remove(), 1150);
 }
 function fxRing(p,h,color){
   const el = handEl(p,h); if(!el) return;
@@ -3462,7 +3552,7 @@ function fxRise(p,h,color){
       `--dx:${(Math.random()*2-1)*18}px;--dy:${-40-Math.random()*46}px;` +
       `animation-delay:${i*45}ms;`;
     host.appendChild(d);
-    setTimeout(() => d.remove(), 1600 + i*45);
+    setTimeout(() => d.remove(), 1150 + i*45);
   }
 }
 /* 手から手へ走る線（盤をまたぐので .app に置く） */
@@ -3480,7 +3570,7 @@ function fxBeam(p1,h1,p2,h2,color){
     `transform:rotate(${ang}deg);`;
   app.style.position = app.style.position || "relative";
   app.appendChild(d);
-  setTimeout(() => d.remove(), 1100);
+  setTimeout(() => d.remove(), 800);
 }
 /* 封印：相手の盤を一枚覆う */
 function fxSealBoard(p, color){
@@ -3502,7 +3592,7 @@ function fxSwap(color){
     d.className = "fx-swap";
     d.style.cssText = `--fx-c:${color};`;
     host.appendChild(d);
-    setTimeout(() => d.remove(), 1350);
+    setTimeout(() => d.remove(), 950);
   });
 }
 
