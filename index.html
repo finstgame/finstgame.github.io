@@ -763,12 +763,12 @@
     box-shadow:0 0 34px color-mix(in srgb, var(--fx-c) 45%, transparent);
     text-align:center;
     transform:translateX(-110%) skewY(-2deg);
-    animation:fxBand .95s cubic-bezier(.22,.9,.3,1) forwards;
+    animation:fxBand 2.5s cubic-bezier(.22,.9,.3,1) forwards;
   }
   @keyframes fxBand{
     0%{transform:translateX(-110%) skewY(-2deg); opacity:0;}
-    18%{transform:translateX(0) skewY(-2deg); opacity:1;}
-    72%{transform:translateX(0) skewY(-2deg); opacity:1;}
+    8%{transform:translateX(0) skewY(-2deg); opacity:1;}
+    86%{transform:translateX(0) skewY(-2deg); opacity:1;}
     100%{transform:translateX(110%) skewY(-2deg); opacity:0;}
   }
   .fx-name{
@@ -790,7 +790,7 @@
   .fx-ring{
     border-radius:50%;
     border:3px solid var(--fx-c);
-    animation:fxRing .62s ease-out forwards;
+    animation:fxRing 1.15s ease-out forwards;
   }
   @keyframes fxRing{
     from{transform:scale(.25); opacity:.95;}
@@ -800,7 +800,7 @@
     border-radius:14px;
     border:3px solid var(--fx-c);
     background:color-mix(in srgb, var(--fx-c) 18%, transparent);
-    animation:fxShield .8s ease-out forwards;
+    animation:fxShield 1.5s ease-out forwards;
   }
   @keyframes fxShield{
     0%{transform:scale(.7); opacity:0;}
@@ -812,7 +812,7 @@
     background:linear-gradient(90deg, transparent, var(--fx-c), transparent);
     height:4px; border-radius:2px;
     transform-origin:left center;
-    animation:fxBeam .5s ease-out forwards;
+    animation:fxBeam .9s ease-out forwards;
     box-shadow:0 0 12px var(--fx-c);
   }
   @keyframes fxBeam{
@@ -824,7 +824,7 @@
     width:6px; height:6px; border-radius:50%;
     background:var(--fx-c);
     box-shadow:0 0 8px var(--fx-c);
-    animation:fxSpark .8s ease-out forwards;
+    animation:fxSpark 1.4s ease-out forwards;
   }
   @keyframes fxSpark{
     from{transform:translate(0,0) scale(1); opacity:1;}
@@ -836,7 +836,7 @@
       color-mix(in srgb, var(--fx-c) 26%, transparent),
       transparent 45%,
       color-mix(in srgb, var(--fx-c) 26%, transparent));
-    animation:fxSwap .7s ease-out forwards;
+    animation:fxSwap 1.25s ease-out forwards;
   }
   @keyframes fxSwap{
     0%{opacity:0;} 30%{opacity:1;} 100%{opacity:0;}
@@ -2555,7 +2555,17 @@ function enterDefense(){
   say(S.msg);
   commit();                                  // 相手の端末に応答フェーズと締切を渡す
   SFX.duck(true);
-  if(iRespond()) openSheet(); else startWatchdog();
+  /* CPUが応答する番は、シートを出すとCPUの手札が見えてしまう。
+     締切だけ動かして、選択はCPUに任せる。 */
+  const cpuResponds = !online && S.cpu && p.responder === 1;
+  if(cpuResponds){
+    say(S.msg + `<span class="sub">CPUが考えています…</span>`);
+    startTimer();
+  } else if(iRespond()){
+    openSheet();
+  } else {
+    startWatchdog();
+  }
   cpuTick();
 }
 
@@ -2876,6 +2886,7 @@ async function spend(p, id, detail){
   const el = document.querySelector(`.board .card[data-id="${id}"]`);
   SFX.card(id);
   if(el && p === S.turn){ el.classList.add("spent"); await wait(340); }
+  await wait(440);          // カード名を読む間
   consume(p, id, detail);
 }
 
@@ -3402,7 +3413,7 @@ function cardCutIn(id){
   band.style.animation = "none"; void band.offsetWidth;   // 連続で使っても必ず流れるように
   band.style.animation = "";
   clearTimeout(cardCutIn._t);
-  cardCutIn._t = setTimeout(() => wrap.classList.remove("on"), 980);
+  cardCutIn._t = setTimeout(() => wrap.classList.remove("on"), 2550);
 }
 
 /* 盤の上に置く効果 */
@@ -3414,7 +3425,7 @@ function fxAt(el, build){
   if(!node) return;
   host.style.position = host.style.position || "relative";
   host.appendChild(node);
-  setTimeout(() => node.remove(), 900);
+  setTimeout(() => node.remove(), 1600);
 }
 function fxRing(p,h,color){
   const el = handEl(p,h); if(!el) return;
@@ -3451,7 +3462,7 @@ function fxRise(p,h,color){
       `--dx:${(Math.random()*2-1)*18}px;--dy:${-40-Math.random()*46}px;` +
       `animation-delay:${i*45}ms;`;
     host.appendChild(d);
-    setTimeout(() => d.remove(), 900 + i*45);
+    setTimeout(() => d.remove(), 1600 + i*45);
   }
 }
 /* 手から手へ走る線（盤をまたぐので .app に置く） */
@@ -3469,7 +3480,7 @@ function fxBeam(p1,h1,p2,h2,color){
     `transform:rotate(${ang}deg);`;
   app.style.position = app.style.position || "relative";
   app.appendChild(d);
-  setTimeout(() => d.remove(), 700);
+  setTimeout(() => d.remove(), 1100);
 }
 /* 封印：相手の盤を一枚覆う */
 function fxSealBoard(p, color){
@@ -3491,7 +3502,7 @@ function fxSwap(color){
     d.className = "fx-swap";
     d.style.cssText = `--fx-c:${color};`;
     host.appendChild(d);
-    setTimeout(() => d.remove(), 780);
+    setTimeout(() => d.remove(), 1350);
   });
 }
 
