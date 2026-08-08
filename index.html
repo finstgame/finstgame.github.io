@@ -2493,7 +2493,7 @@ const SFX = (() => {
     bgmOn = true; bar = 0; nextAt = ctx.currentTime + 0.15;
     bgmBus.gain.cancelScheduledValues(ctx.currentTime);
     bgmBus.gain.setValueAtTime(0.0001, ctx.currentTime);
-    bgmBus.gain.exponentialRampToValueAtTime(0.5, ctx.currentTime + 0.5);
+    bgmBus.gain.exponentialRampToValueAtTime(0.62, ctx.currentTime + 0.5);
     clearInterval(bgmTimer); bgmTimer = setInterval(bgmLoop, 90);
     bgmLoop();
   }
