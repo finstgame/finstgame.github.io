@@ -2139,66 +2139,32 @@ const SFX = (() => {
   const BPM = 168, BEAT = 60 / BPM, EIGHTH = BEAT / 2;
   const HZ = m => 440 * Math.pow(2, (m - 69) / 12);
 
-  /* ---- 音源：木を叩く音（木琴）----
-     割り箸のゲームなので木にした。木琴は基音の上に約4倍・約10倍の倍音が乗り、
-     倍音ほど早く消える。その比率を素直に作ると木の音になる。 */
-  function mallet(f, at, dur, peak){
-    const parts = [
-      { mult: 1,   amp: 1,    len: 1    },
-      { mult: 3.98, amp: 0.30, len: 0.42 },   // 木琴の第1倍音はほぼ4倍
-      { mult: 9.6,  amp: 0.09, len: 0.18 }
-    ];
-    parts.forEach(pt => {
-      const o = ctx.createOscillator(); o.type = "sine";
-      o.frequency.setValueAtTime(f * pt.mult, at);
-      const d = Math.max(0.05, dur * pt.len);
-      const g = ctx.createGain();
-      g.gain.setValueAtTime(0, at);
-      g.gain.linearRampToValueAtTime(peak * pt.amp, at + 0.003);
-      g.gain.exponentialRampToValueAtTime(0.0001, at + d);
-      g.gain.linearRampToValueAtTime(0, at + d + 0.01);
-      o.connect(g); g.connect(bgmBus);
-      if(pt.mult === 1){
-        const w = ctx.createGain(); w.gain.value = peak * 0.22;
-        g.connect(w); w.connect(verb);
-      }
-      o.start(at); o.stop(at + d + 0.05);
-    });
-    /* マレットが当たる音 */
-    const sN = ctx.createBufferSource(); sN.buffer = noiseBuf();
-    const bp = ctx.createBiquadFilter();
-    bp.type = "bandpass"; bp.frequency.value = 2600; bp.Q.value = 1.2;
-    const g2 = ctx.createGain();
-    g2.gain.value = 0;
-    g2.gain.setValueAtTime(0, at);
-    g2.gain.linearRampToValueAtTime(peak * 0.22, at + 0.001);
-    g2.gain.exponentialRampToValueAtTime(0.0001, at + 0.022);
-    g2.gain.linearRampToValueAtTime(0, at + 0.026);
-    sN.connect(bp); bp.connect(g2); g2.connect(bgmBus);
-    sN.start(at); sN.stop(at + 0.05);
+  /* ---- 音源：機械音（パルス波）----
+     木琴から戻した。旋律とテンポはそのままで、音色だけ電子音に差し替える。
+     0 から一瞬で跳ねると「パツ」と鳴るので、2ms だけ角を落とす。 */
+  let pulseCache = {};
+  function pulse(duty){
+    if(pulseCache[duty]) return pulseCache[duty];
+    const n = 24, re = new Float32Array(n), im = new Float32Array(n);
+    for(let k = 1; k < n; k++) im[k] = (2 / (k * Math.PI)) * Math.sin(k * Math.PI * duty);
+    return (pulseCache[duty] = ctx.createPeriodicWave(re, im));
   }
-
-  /* まるい低音。倍音を足しすぎず、ローパスで丸める */
-  function bassNote(f, at, dur, peak){
-    const o = ctx.createOscillator(); o.type = "sine";
+  const EDGE = 0.002;
+  function chip(f, at, dur, peak, duty, wet){
+    const o = ctx.createOscillator();
+    o.setPeriodicWave(pulse(duty || 0.25));
     o.frequency.setValueAtTime(f, at);
-    const o2 = ctx.createOscillator(); o2.type = "triangle";
-    o2.frequency.setValueAtTime(f * 2, at);
-    const lp = ctx.createBiquadFilter();
-    lp.type = "lowpass"; lp.frequency.setValueAtTime(Math.max(220, f * 5), at);
     const g = ctx.createGain();
     g.gain.setValueAtTime(0, at);
-    g.gain.linearRampToValueAtTime(peak, at + 0.008);
-    g.gain.exponentialRampToValueAtTime(0.0001, at + dur);
-    g.gain.linearRampToValueAtTime(0, at + dur + 0.01);
-    const g2 = ctx.createGain(); g2.gain.value = 0.22;
-    o.connect(g); o2.connect(g2); g2.connect(g);
-    g.connect(lp); lp.connect(bgmBus);
-    o.start(at); o.stop(at + dur + 0.05);
-    o2.start(at); o2.stop(at + dur + 0.05);
+    g.gain.linearRampToValueAtTime(peak, at + EDGE);
+    g.gain.setValueAtTime(peak, at + Math.max(EDGE, dur - EDGE * 3));
+    g.gain.linearRampToValueAtTime(0, at + dur);
+    o.connect(g); g.connect(bgmBus);
+    if(wet){ const w = ctx.createGain(); w.gain.value = peak * wet; g.connect(w); w.connect(verb); }
+    o.start(at); o.stop(at + dur + 0.02);
   }
 
-  /* 低音のドラム。頭の当たり＋胴鳴り＋沈む基音 */
+  /* 低音のドラム。機械音の中でも土台は要るので残す */
   function kick(at, peak){
     const p = peak == null ? 0.5 : peak;
     const o = ctx.createOscillator(); o.type = "sine";
@@ -2207,20 +2173,10 @@ const SFX = (() => {
     const g = ctx.createGain();
     g.gain.setValueAtTime(0, at);
     g.gain.linearRampToValueAtTime(p, at + 0.003);
-    g.gain.exponentialRampToValueAtTime(0.0001, at + 0.34);
-    g.gain.linearRampToValueAtTime(0, at + 0.36);
+    g.gain.exponentialRampToValueAtTime(0.0001, at + 0.30);
+    g.gain.linearRampToValueAtTime(0, at + 0.32);
     o.connect(g); g.connect(bgmBus);
-    o.start(at); o.stop(at + 0.4);
-
-    const o2 = ctx.createOscillator(); o2.type = "triangle";
-    o2.frequency.setValueAtTime(78, at);
-    const g2 = ctx.createGain();
-    g2.gain.setValueAtTime(0, at);
-    g2.gain.linearRampToValueAtTime(p * 0.35, at + 0.004);
-    g2.gain.exponentialRampToValueAtTime(0.0001, at + 0.16);
-    g2.gain.linearRampToValueAtTime(0, at + 0.18);
-    o2.connect(g2); g2.connect(bgmBus);
-    o2.start(at); o2.stop(at + 0.2);
+    o.start(at); o.stop(at + 0.36);
   }
 
   function tick(at, loud){
@@ -2232,10 +2188,10 @@ const SFX = (() => {
     g.gain.value = 0;
     g.gain.setValueAtTime(0, at);
     g.gain.linearRampToValueAtTime(pk, at + 0.0015);
-    g.gain.exponentialRampToValueAtTime(0.0001, at + 0.035);
-    g.gain.linearRampToValueAtTime(0, at + 0.04);
+    g.gain.exponentialRampToValueAtTime(0.0001, at + 0.03);
+    g.gain.linearRampToValueAtTime(0, at + 0.035);
     sN.connect(hp); hp.connect(g); g.connect(bgmBus);
-    sN.start(at); sN.stop(at + 0.07);
+    sN.start(at); sN.stop(at + 0.06);
   }
 
   /* 8分×8＝1小節。
@@ -2267,13 +2223,12 @@ const SFX = (() => {
     const b = i % 16, mel = LEAD[b], root = ROOT[b];
     for(let k = 0; k < 8; k++){
       const t = at + k * EIGHTH;
-      /* ベースは表拍と、その裏に軽く */
-      if(k % 2 === 0) bassNote(HZ(root), t, EIGHTH * 1.8, 0.16);
-      else if(k === 3 || k === 7) bassNote(HZ(root + 12), t, EIGHTH * 0.9, 0.07);
+      /* ベースは根音と5度を淡々と */
+      chip(HZ(root + (k % 2 ? 7 : 0)), t, EIGHTH * 0.92, 0.06, 0.5);
       /* 旋律 */
-      if(mel[k]) mallet(HZ(mel[k]), t, 0.42, 0.10);
+      if(mel[k]) chip(HZ(mel[k]), t, EIGHTH * 1.7, 0.045, 0.25, 0.12);
       /* 低音のドラムは表拍に */
-      if(k === 0 || k === 4) kick(t, k === 0 ? 0.5 : 0.38);
+      if(k === 0 || k === 4) kick(t, k === 0 ? 0.45 : 0.34);
       tick(t, k % 2 === 1);
     }
   }
