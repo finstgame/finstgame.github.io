@@ -2140,40 +2140,113 @@ const SFX = (() => {
   const HZ = m => 440 * Math.pow(2, (m - 69) / 12);
 
   /* ---- 音源：オーケストラ ----
-     狙いは「壮大・爽快・クール・熟考」。King Gnu 的な要素を技法に翻訳した。
-       ・王道進行 F → G → Em → Am（日本のポップスで最も感情を動かす循環）
-       ・パッドは maj7 / 7th の艶のある和音
-       ・ハーフタイムの重い拍（クラップは3拍目だけ）
-       ・ピアノのオスティナートが淡々と回り、その上をホルン系のリードが歌う
-     どの音も 0 から数 ms のランプで立ち上げ、段差ノイズを出さない。 */
+     編成: ヴァイオリン（旋律＋高音の和声）／ヴィオラ・チェロ（中低弦の和音と動く線）
+           コントラバス／ピチカート弦／フルート／ホルン／ピアノ／ティンパニ
+           グロッケンシュピール／ハープの駆け上がり
+     弦が本物らしく聞こえる鍵はビブラート。LFO で音程を数セント揺らし、
+     弾き始めは揺れず、伸ばすほど揺れが深くなるようにしてある。 */
 
-  /* 弦セクション：デチューンした鋸を重ね、ローパスをゆっくり開閉して息をさせる */
-  function strings(freqs, at, dur, peak){
-    freqs.forEach(f => {
-      [-7, 7].forEach(cents => {
-        const o = ctx.createOscillator();
-        o.type = "sawtooth";
-        o.frequency.setValueAtTime(f, at);
-        o.detune.setValueAtTime(cents, at);
-        const lp = ctx.createBiquadFilter();
-        lp.type = "lowpass"; lp.Q.value = 0.6;
-        lp.frequency.setValueAtTime(850, at);
-        lp.frequency.linearRampToValueAtTime(1600, at + dur * 0.4);
-        lp.frequency.linearRampToValueAtTime(850, at + dur);
-        const g = ctx.createGain();
-        g.gain.setValueAtTime(0, at);
-        g.gain.linearRampToValueAtTime(peak, at + 0.3);
-        g.gain.setValueAtTime(peak, at + Math.max(0.3, dur - 0.45));
-        g.gain.linearRampToValueAtTime(0, at + dur);
-        o.connect(lp); lp.connect(g); g.connect(bgmBus);
-        const w = ctx.createGain(); w.gain.value = peak * 1.5;
-        g.connect(w); w.connect(verb);
-        o.start(at); o.stop(at + dur + 0.05);
-      });
+  /* 弦の持続音（ヴァイオリン・ヴィオラ・チェロ共通）。opt で音色を変える */
+  function susString(f, at, dur, peak, opt){
+    const o2 = opt || {};
+    const atk = o2.atk || 0.25, rel = o2.rel || 0.4;
+    [-6, 6].forEach(cents => {
+      const o = ctx.createOscillator();
+      o.type = "sawtooth";
+      o.frequency.setValueAtTime(f, at);
+      o.detune.setValueAtTime(cents, at);
+      /* ビブラート：遅れて深くなる */
+      const lfo = ctx.createOscillator();
+      lfo.frequency.setValueAtTime(o2.vibRate || 5.2, at);
+      const lg = ctx.createGain();
+      lg.gain.setValueAtTime(0, at);
+      lg.gain.linearRampToValueAtTime(o2.vib == null ? 7 : o2.vib, at + Math.min(dur * 0.4, 0.5));
+      lfo.connect(lg); lg.connect(o.detune);
+      const lp = ctx.createBiquadFilter();
+      lp.type = "lowpass"; lp.Q.value = 0.7;
+      lp.frequency.setValueAtTime(o2.cut || 1400, at);
+      const g = ctx.createGain();
+      g.gain.setValueAtTime(0, at);
+      g.gain.linearRampToValueAtTime(peak, at + atk);
+      g.gain.setValueAtTime(peak, at + Math.max(atk, dur - rel));
+      g.gain.linearRampToValueAtTime(0, at + dur);
+      o.connect(lp); lp.connect(g); g.connect(bgmBus);
+      const w = ctx.createGain(); w.gain.value = peak * (o2.wet == null ? 1.4 : o2.wet);
+      g.connect(w); w.connect(verb);
+      o.start(at); o.stop(at + dur + 0.05);
+      lfo.start(at); lfo.stop(at + dur + 0.05);
     });
   }
 
-  /* ピアノ：倍音を減衰の速さごと分けて重ねる。わずかに上ずった倍音が生っぽさ */
+  /* ピチカート弦。はじいてすぐ暗くなる */
+  function pizz(f, at, peak, len){
+    const L = len || 0.26;
+    const o = ctx.createOscillator(); o.type = "sawtooth";
+    o.frequency.setValueAtTime(f, at);
+    const lp = ctx.createBiquadFilter();
+    lp.type = "lowpass";
+    lp.frequency.setValueAtTime(Math.min(3200, f * 6), at);
+    lp.frequency.exponentialRampToValueAtTime(Math.max(300, f * 1.5), at + L);
+    const g = ctx.createGain();
+    g.gain.setValueAtTime(0, at);
+    g.gain.linearRampToValueAtTime(peak, at + 0.004);
+    g.gain.exponentialRampToValueAtTime(0.0001, at + L);
+    g.gain.linearRampToValueAtTime(0, at + L + 0.01);
+    o.connect(lp); lp.connect(g); g.connect(bgmBus);
+    const w = ctx.createGain(); w.gain.value = peak * 0.5;
+    g.connect(w); w.connect(verb);
+    o.start(at); o.stop(at + L + 0.05);
+  }
+
+  /* フルート：芯のサイン波＋息のノイズ＋浅いビブラート */
+  function flute(f, at, dur, peak){
+    const o = ctx.createOscillator(); o.type = "sine";
+    o.frequency.setValueAtTime(f, at);
+    const lfo = ctx.createOscillator(); lfo.frequency.setValueAtTime(5, at);
+    const lg = ctx.createGain();
+    lg.gain.setValueAtTime(0, at);
+    lg.gain.linearRampToValueAtTime(9, at + 0.25);
+    lfo.connect(lg); lg.connect(o.detune);
+    const g = ctx.createGain();
+    g.gain.setValueAtTime(0, at);
+    g.gain.linearRampToValueAtTime(peak, at + 0.05);
+    g.gain.setValueAtTime(peak * 0.9, at + Math.max(0.06, dur - 0.09));
+    g.gain.linearRampToValueAtTime(0, at + dur);
+    o.connect(g); g.connect(bgmBus);
+    const w = ctx.createGain(); w.gain.value = peak * 1.2;
+    g.connect(w); w.connect(verb);
+    /* 息 */
+    const sN = ctx.createBufferSource(); sN.buffer = noiseBuf();
+    const hp = ctx.createBiquadFilter();
+    hp.type = "bandpass"; hp.frequency.value = Math.min(9000, f * 2); hp.Q.value = 2;
+    const g2 = ctx.createGain();
+    g2.gain.value = 0;
+    g2.gain.setValueAtTime(0, at);
+    g2.gain.linearRampToValueAtTime(peak * 0.18, at + 0.04);
+    g2.gain.linearRampToValueAtTime(0, at + dur);
+    sN.connect(hp); hp.connect(g2); g2.connect(bgmBus);
+    o.start(at); o.stop(at + dur + 0.05);
+    lfo.start(at); lfo.stop(at + dur + 0.05);
+    sN.start(at); sN.stop(at + dur + 0.05);
+  }
+
+  /* グロッケンシュピール：澄んだ非整数倍音が長く残る */
+  function glock(f, at, peak){
+    [[1, 1, 1.4], [2.76, 0.3, 0.45]].forEach(pt => {
+      const o = ctx.createOscillator(); o.type = "sine";
+      o.frequency.setValueAtTime(f * pt[0], at);
+      const g = ctx.createGain();
+      g.gain.setValueAtTime(0, at);
+      g.gain.linearRampToValueAtTime(peak * pt[1], at + 0.003);
+      g.gain.exponentialRampToValueAtTime(0.0001, at + pt[2]);
+      g.gain.linearRampToValueAtTime(0, at + pt[2] + 0.01);
+      o.connect(g); g.connect(bgmBus);
+      const w = ctx.createGain(); w.gain.value = peak * 1.6;
+      g.connect(w); w.connect(verb);
+      o.start(at); o.stop(at + pt[2] + 0.05);
+    });
+  }
+
   function piano(f, at, dur, peak){
     [[1, 1], [2, 0.4], [3, 0.16], [4.2, 0.07]].forEach(pt => {
       const m = pt[0], a = pt[1];
@@ -2191,7 +2264,6 @@ const SFX = (() => {
     });
   }
 
-  /* リード：ホルン寄り。立ち上がりで明るさが開く */
   function horn(f, at, dur, peak){
     [-6, 6].forEach((cents, i) => {
       const o = ctx.createOscillator(); o.type = "sawtooth";
@@ -2214,7 +2286,6 @@ const SFX = (() => {
     });
   }
 
-  /* コントラバス：鋸をローパスで丸め、サイン波で芯を足す */
   function bassOrch(f, at, dur, peak){
     const o = ctx.createOscillator(); o.type = "sawtooth";
     o.frequency.setValueAtTime(f, at);
@@ -2228,14 +2299,13 @@ const SFX = (() => {
     g.gain.setValueAtTime(peak * 0.9, at + Math.max(0.03, dur - 0.1));
     g.gain.linearRampToValueAtTime(0, at + dur);
     o.connect(lp); lp.connect(g);
-    const g2 = ctx.createGain(); g2.gain.value = 0.6;
+    const g2 = ctx.createGain(); g2.gain.value = 0.85;
     o2.connect(g2); g2.connect(g);
     g.connect(bgmBus);
     o.start(at); o.stop(at + dur + 0.05);
     o2.start(at); o2.stop(at + dur + 0.05);
   }
 
-  /* ティンパニ：わずかに音程が沈む長い胴鳴り＋皮の当たり */
   function timpani(f, at, peak){
     const o = ctx.createOscillator(); o.type = "sine";
     o.frequency.setValueAtTime(f * 1.02, at);
@@ -2283,11 +2353,11 @@ const SFX = (() => {
     const g = ctx.createGain();
     g.gain.value = 0;
     g.gain.setValueAtTime(0, at);
-    g.gain.linearRampToValueAtTime(0.07, at + 0.002);
+    g.gain.linearRampToValueAtTime(0.06, at + 0.002);
     g.gain.exponentialRampToValueAtTime(0.0001, at + 0.14);
     g.gain.linearRampToValueAtTime(0, at + 0.15);
     sN.connect(bp); bp.connect(g); g.connect(bgmBus);
-    const w = ctx.createGain(); w.gain.value = 0.06;
+    const w = ctx.createGain(); w.gain.value = 0.05;
     g.connect(w); w.connect(verb);
     sN.start(at); sN.stop(at + 0.2);
   }
@@ -2297,7 +2367,7 @@ const SFX = (() => {
     const hp = ctx.createBiquadFilter();
     hp.type = "highpass"; hp.frequency.value = 8500;
     const g = ctx.createGain();
-    const pk = loud ? 0.012 : 0.006;
+    const pk = loud ? 0.01 : 0.005;
     g.gain.value = 0;
     g.gain.setValueAtTime(0, at);
     g.gain.linearRampToValueAtTime(pk, at + 0.0015);
@@ -2308,9 +2378,8 @@ const SFX = (() => {
   }
 
   /* 16分×16＝1小節、16小節で1周（約42秒）。
-     8小節でひとつの歌。前半は問いを積み、後半は同じ歌を一段高く再現して
-     13小節目のD6（1回だけの最高音）で開く。旋律は王道進行の構成音の上に書き、
-     半音でぶつかる音（b9）はゼロにしてある。 */
+     8小節でひとつの歌。後半は同じ歌を一段高く再現して
+     13小節目のD6（1回だけの最高音）で開く。b9の濁りはゼロ（検証済み） */
   const LEAD = [
     [81, 0, 0, 0, 79, 0,77, 0, 76, 0, 0, 0,  0, 0,74, 0],
     [74, 0, 0, 0, 76, 0,74, 0, 71, 0, 0, 0,  0, 0,67, 0],
@@ -2329,16 +2398,13 @@ const SFX = (() => {
     [76, 0, 0, 0, 74, 0,71, 0, 74, 0, 0, 0,  0, 0,79, 0],
     [81, 0, 0, 0, 76, 0,74, 0, 72, 0, 0, 0, 69, 0, 0, 0]
   ];
-  /* 王道進行 F → G → Em → Am を回す */
   const ROOT = [41,43,40,45, 41,43,40,45, 41,43,40,45, 41,43,40,45];
-  /* パッドの声部。Fmaj7 / G / Em7 / Am7 の艶 */
   const PAD = {
     41: [53,57,60,64],
     43: [55,59,62,67],
     40: [52,55,59,62],
     45: [57,60,64,67]
   };
-  /* ピアノのオスティナート用アルペジオ */
   const ARP = {
     41: [65,69,72,76],
     43: [67,71,74,79],
@@ -2350,39 +2416,68 @@ const SFX = (() => {
   function scheduleBar(at, i){
     const b = i % 16, mel = LEAD[b], root = ROOT[b];
     const S16 = EIGHTH / 2, barDur = BEAT * 4;
+    const isB = b >= 8;                          // 後半＝編成が厚くなる
 
-    /* 弦のパッドを小節いっぱいに敷く */
-    strings(PAD[root].map(HZ), at, barDur * 1.05, 0.015);
+    /* 低音弦：根音を低い位置でもう1枚敷く（重厚感の土台） */
+    susString(HZ(root), at, barDur * 1.05, 0.016,
+      {cut:750, atk:0.28, vib:4, vibRate:4.5, wet:1.2});
+    /* 中低弦（ヴィオラ・チェロ）の和音 */
+    PAD[root].forEach(n =>
+      susString(HZ(n), at, barDur * 1.05, 0.011,
+        {cut:1150, atk:0.3, vib:5, vibRate:4.8, wet:1.5}));
+    /* 高弦（ヴァイオリン）は上2声を1オクターブ上で */
+    [PAD[root][2] + 12, PAD[root][3] + 12].forEach(n =>
+      susString(HZ(n), at, barDur * 1.05, 0.0075,
+        {cut:2400, atk:0.35, vib:8, vibRate:5.4, wet:1.8}));
+    /* チェロの動く線：根音 → 5度 */
+    susString(HZ(root + 12), at, BEAT * 2.05, 0.024,
+      {cut:900, atk:0.12, vib:6, vibRate:5, wet:1.2});
+    susString(HZ(root + 19), at + BEAT * 2, BEAT * 2.0, 0.022,
+      {cut:900, atk:0.12, vib:6, vibRate:5, wet:1.2});
+    /* 低いブラス（トロンボーン相当）。低い鋸をローパスで暗く鳴らす */
+    horn(HZ(root + 12), at, barDur * 0.98, isB ? 0.026 : 0.018);
+    /* コントラバス */
+    bassOrch(HZ(root - 12), at, BEAT * 1.9, 0.13);
+    bassOrch(HZ(root - 12), at + BEAT * 2, BEAT * 1.4, 0.115);
 
-    /* コントラバス：頭で踏み、3拍目で置き直し、4拍目裏で軽く動く */
-    bassOrch(HZ(root - 12), at, BEAT * 1.9, 0.11);
-    bassOrch(HZ(root - 12), at + BEAT * 2, BEAT * 1.4, 0.10);
-    bassOrch(HZ(root), at + BEAT * 3.5, BEAT * 0.45, 0.055);
-
-    /* ピアノのオスティナート（8分で淡々と回る） */
+    /* ピチカートのオスティナート。後半はピアノが重なって前へ出る */
     const arp = ARP[root];
     for(let k = 0; k < 8; k++){
-      piano(HZ(arp[PATT[k]]), at + k * EIGHTH, 1.0, 0.030);
+      pizz(HZ(arp[PATT[k]]), at + k * EIGHTH, 0.034);
+      if(isB) piano(HZ(arp[PATT[k]]), at + k * EIGHTH, 0.9, 0.02);
     }
 
-    /* リード。次の音が来るまで伸ばして歌わせる */
+    /* 旋律はヴァイオリン。後半はホルンとフルート（1オクターブ上）が重なる */
+    let firstNote = true;
     for(let k = 0; k < 16; k++){
       if(!mel[k]) continue;
       let len = 1;
       while(k + len < 16 && !mel[k + len]) len++;
-      horn(HZ(mel[k]), at + k * S16, S16 * len * 0.96, 0.05);
+      const t = at + k * S16, d = S16 * len * 0.96;
+      susString(HZ(mel[k]), t, d, 0.040,
+        {cut:3000, atk:0.06, rel:0.12, vib:9, vibRate:5.6, wet:1.2});
+      /* チェロが1オクターブ下で同じ旋律を弾く＝重厚なユニゾン */
+      susString(HZ(mel[k] - 12), t, d, 0.020,
+        {cut:1100, atk:0.08, rel:0.12, vib:6, vibRate:5, wet:1.0});
+      if(isB){
+        horn(HZ(mel[k]), t, d, 0.024);
+        flute(HZ(mel[k] + 12), t, d, 0.010);
+        if(firstNote){ glock(HZ(mel[k] + 12), t, 0.026); firstNote = false; }
+      }
     }
 
-    /* 打楽器はハーフタイム。フレーズ頭のティンパニと3拍目のクラップ */
-    if(b % 4 === 0) timpani(HZ(root - 12), at, 0.32);
-    kick(at, 0.4);
-    kick(at + 10 * S16, 0.28);
+    /* 打楽器はハーフタイム */
+    if(b % 2 === 0) timpani(HZ(root - 12), at, 0.34);
+    kick(at, 0.42);
+    kick(at + 10 * S16, 0.24);
     clap(at + 8 * S16);
     for(let k = 2; k < 16; k += 2) tick(at + k * S16, k === 8);
-    /* 8小節の締めはティンパニで畳みかけ、次の周へ放り込む */
+    /* 8小節の締め：ティンパニ＋ハープの駆け上がりで次の段へ */
     if(b === 7 || b === 15){
-      timpani(HZ(root - 12), at + 12 * S16, 0.2);
-      timpani(HZ(root - 12), at + 14 * S16, 0.28);
+      timpani(HZ(root - 12), at + 12 * S16, 0.18);
+      timpani(HZ(root - 12), at + 14 * S16, 0.26);
+      [57,60,64,69,72,76,79,84].forEach((n, j) =>
+        pizz(HZ(n), at + barDur - 0.5 + j * 0.058, 0.018 + j * 0.002, 0.5));
     }
   }
   function bgmLoop(){
