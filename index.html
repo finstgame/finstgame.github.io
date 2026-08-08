@@ -2136,50 +2136,146 @@ const SFX = (() => {
      フィル・残響を足していたから。すべて外して、
      細いパルス波・残響なし・一定の密度、という古い携帯ゲーム機の作りに寄せる。 */
   let bgmOn = false, bgmTimer = null, bar = 0, nextAt = 0;
-  const BPM = 152, BEAT = 60 / BPM, EIGHTH = BEAT / 2;
+  const BPM = 92, BEAT = 60 / BPM, EIGHTH = BEAT / 2;
   const HZ = m => 440 * Math.pow(2, (m - 69) / 12);
 
-  /* ---- 音源：機械音（パルス波）----
-     木琴から戻した。旋律とテンポはそのままで、音色だけ電子音に差し替える。
-     0 から一瞬で跳ねると「パツ」と鳴るので、2ms だけ角を落とす。 */
-  let pulseCache = {};
-  function pulse(duty){
-    if(pulseCache[duty]) return pulseCache[duty];
-    const n = 24, re = new Float32Array(n), im = new Float32Array(n);
-    for(let k = 1; k < n; k++) im[k] = (2 / (k * Math.PI)) * Math.sin(k * Math.PI * duty);
-    return (pulseCache[duty] = ctx.createPeriodicWave(re, im));
-  }
-  const EDGE = 0.002;
-  function chip(f, at, dur, peak, duty, wet){
-    const o = ctx.createOscillator();
-    o.setPeriodicWave(pulse(duty || 0.25));
-    o.frequency.setValueAtTime(f, at);
-    const g = ctx.createGain();
-    g.gain.setValueAtTime(0, at);
-    g.gain.linearRampToValueAtTime(peak, at + EDGE);
-    g.gain.setValueAtTime(peak, at + Math.max(EDGE, dur - EDGE * 3));
-    g.gain.linearRampToValueAtTime(0, at + dur);
-    o.connect(g); g.connect(bgmBus);
-    if(wet){ const w = ctx.createGain(); w.gain.value = peak * wet; g.connect(w); w.connect(verb); }
-    o.start(at); o.stop(at + dur + 0.02);
+  /* ---- 音源：オーケストラ ----
+     狙いは「壮大・爽快・クール・熟考」。King Gnu 的な要素を技法に翻訳した。
+       ・王道進行 F → G → Em → Am（日本のポップスで最も感情を動かす循環）
+       ・パッドは maj7 / 7th の艶のある和音
+       ・ハーフタイムの重い拍（クラップは3拍目だけ）
+       ・ピアノのオスティナートが淡々と回り、その上をホルン系のリードが歌う
+     どの音も 0 から数 ms のランプで立ち上げ、段差ノイズを出さない。 */
+
+  /* 弦セクション：デチューンした鋸を重ね、ローパスをゆっくり開閉して息をさせる */
+  function strings(freqs, at, dur, peak){
+    freqs.forEach(f => {
+      [-7, 7].forEach(cents => {
+        const o = ctx.createOscillator();
+        o.type = "sawtooth";
+        o.frequency.setValueAtTime(f, at);
+        o.detune.setValueAtTime(cents, at);
+        const lp = ctx.createBiquadFilter();
+        lp.type = "lowpass"; lp.Q.value = 0.6;
+        lp.frequency.setValueAtTime(850, at);
+        lp.frequency.linearRampToValueAtTime(1600, at + dur * 0.4);
+        lp.frequency.linearRampToValueAtTime(850, at + dur);
+        const g = ctx.createGain();
+        g.gain.setValueAtTime(0, at);
+        g.gain.linearRampToValueAtTime(peak, at + 0.3);
+        g.gain.setValueAtTime(peak, at + Math.max(0.3, dur - 0.45));
+        g.gain.linearRampToValueAtTime(0, at + dur);
+        o.connect(lp); lp.connect(g); g.connect(bgmBus);
+        const w = ctx.createGain(); w.gain.value = peak * 1.5;
+        g.connect(w); w.connect(verb);
+        o.start(at); o.stop(at + dur + 0.05);
+      });
+    });
   }
 
-  /* 低音のドラム。機械音の中でも土台は要るので残す */
+  /* ピアノ：倍音を減衰の速さごと分けて重ねる。わずかに上ずった倍音が生っぽさ */
+  function piano(f, at, dur, peak){
+    [[1, 1], [2, 0.4], [3, 0.16], [4.2, 0.07]].forEach(pt => {
+      const m = pt[0], a = pt[1];
+      const o = ctx.createOscillator(); o.type = "sine";
+      o.frequency.setValueAtTime(f * m, at);
+      const d = Math.min(dur, 1.15 / m);
+      const g = ctx.createGain();
+      g.gain.setValueAtTime(0, at);
+      g.gain.linearRampToValueAtTime(peak * a, at + 0.003);
+      g.gain.exponentialRampToValueAtTime(0.0001, at + d);
+      g.gain.linearRampToValueAtTime(0, at + d + 0.01);
+      o.connect(g); g.connect(bgmBus);
+      if(m === 1){ const w = ctx.createGain(); w.gain.value = peak * 0.5; g.connect(w); w.connect(verb); }
+      o.start(at); o.stop(at + d + 0.05);
+    });
+  }
+
+  /* リード：ホルン寄り。立ち上がりで明るさが開く */
+  function horn(f, at, dur, peak){
+    [-6, 6].forEach((cents, i) => {
+      const o = ctx.createOscillator(); o.type = "sawtooth";
+      o.frequency.setValueAtTime(f, at);
+      o.detune.setValueAtTime(cents, at);
+      const lp = ctx.createBiquadFilter();
+      lp.type = "lowpass"; lp.Q.value = 1.1;
+      lp.frequency.setValueAtTime(f * 2.2, at);
+      lp.frequency.linearRampToValueAtTime(f * 4.5, at + 0.09);
+      const g = ctx.createGain();
+      const p = peak * (i ? 0.6 : 1);
+      g.gain.setValueAtTime(0, at);
+      g.gain.linearRampToValueAtTime(p, at + 0.045);
+      g.gain.setValueAtTime(p * 0.85, at + Math.max(0.05, dur - 0.08));
+      g.gain.linearRampToValueAtTime(0, at + dur);
+      o.connect(lp); lp.connect(g); g.connect(bgmBus);
+      const w = ctx.createGain(); w.gain.value = p * 0.7;
+      g.connect(w); w.connect(verb);
+      o.start(at); o.stop(at + dur + 0.05);
+    });
+  }
+
+  /* コントラバス：鋸をローパスで丸め、サイン波で芯を足す */
+  function bassOrch(f, at, dur, peak){
+    const o = ctx.createOscillator(); o.type = "sawtooth";
+    o.frequency.setValueAtTime(f, at);
+    const lp = ctx.createBiquadFilter();
+    lp.type = "lowpass"; lp.frequency.setValueAtTime(Math.max(200, f * 4), at);
+    const o2 = ctx.createOscillator(); o2.type = "sine";
+    o2.frequency.setValueAtTime(f, at);
+    const g = ctx.createGain();
+    g.gain.setValueAtTime(0, at);
+    g.gain.linearRampToValueAtTime(peak, at + 0.02);
+    g.gain.setValueAtTime(peak * 0.9, at + Math.max(0.03, dur - 0.1));
+    g.gain.linearRampToValueAtTime(0, at + dur);
+    o.connect(lp); lp.connect(g);
+    const g2 = ctx.createGain(); g2.gain.value = 0.6;
+    o2.connect(g2); g2.connect(g);
+    g.connect(bgmBus);
+    o.start(at); o.stop(at + dur + 0.05);
+    o2.start(at); o2.stop(at + dur + 0.05);
+  }
+
+  /* ティンパニ：わずかに音程が沈む長い胴鳴り＋皮の当たり */
+  function timpani(f, at, peak){
+    const o = ctx.createOscillator(); o.type = "sine";
+    o.frequency.setValueAtTime(f * 1.02, at);
+    o.frequency.exponentialRampToValueAtTime(f * 0.985, at + 0.4);
+    const g = ctx.createGain();
+    g.gain.setValueAtTime(0, at);
+    g.gain.linearRampToValueAtTime(peak, at + 0.004);
+    g.gain.exponentialRampToValueAtTime(0.0001, at + 0.55);
+    g.gain.linearRampToValueAtTime(0, at + 0.57);
+    o.connect(g); g.connect(bgmBus);
+    const w = ctx.createGain(); w.gain.value = peak * 0.8;
+    g.connect(w); w.connect(verb);
+    o.start(at); o.stop(at + 0.6);
+    const sN = ctx.createBufferSource(); sN.buffer = noiseBuf();
+    const bp = ctx.createBiquadFilter();
+    bp.type = "lowpass"; bp.frequency.value = 500;
+    const g2 = ctx.createGain();
+    g2.gain.value = 0;
+    g2.gain.setValueAtTime(0, at);
+    g2.gain.linearRampToValueAtTime(peak * 0.5, at + 0.002);
+    g2.gain.exponentialRampToValueAtTime(0.0001, at + 0.06);
+    g2.gain.linearRampToValueAtTime(0, at + 0.07);
+    sN.connect(bp); bp.connect(g2); g2.connect(bgmBus);
+    sN.start(at); sN.stop(at + 0.1);
+  }
+
   function kick(at, peak){
     const p = peak == null ? 0.5 : peak;
     const o = ctx.createOscillator(); o.type = "sine";
-    o.frequency.setValueAtTime(115, at);
-    o.frequency.exponentialRampToValueAtTime(38, at + 0.12);
+    o.frequency.setValueAtTime(110, at);
+    o.frequency.exponentialRampToValueAtTime(40, at + 0.11);
     const g = ctx.createGain();
     g.gain.setValueAtTime(0, at);
     g.gain.linearRampToValueAtTime(p, at + 0.003);
-    g.gain.exponentialRampToValueAtTime(0.0001, at + 0.30);
-    g.gain.linearRampToValueAtTime(0, at + 0.32);
+    g.gain.exponentialRampToValueAtTime(0.0001, at + 0.28);
+    g.gain.linearRampToValueAtTime(0, at + 0.30);
     o.connect(g); g.connect(bgmBus);
-    o.start(at); o.stop(at + 0.36);
+    o.start(at); o.stop(at + 0.34);
   }
 
-  /* 手拍子。裏拍に置くと体が動く＝中毒性の芯 */
   function clap(at){
     const sN = ctx.createBufferSource(); sN.buffer = noiseBuf();
     const bp = ctx.createBiquadFilter();
@@ -2187,12 +2283,13 @@ const SFX = (() => {
     const g = ctx.createGain();
     g.gain.value = 0;
     g.gain.setValueAtTime(0, at);
-    g.gain.linearRampToValueAtTime(0.075, at + 0.002);
-    g.gain.exponentialRampToValueAtTime(0.0001, at + 0.13);
-    g.gain.linearRampToValueAtTime(0, at + 0.14);
+    g.gain.linearRampToValueAtTime(0.07, at + 0.002);
+    g.gain.exponentialRampToValueAtTime(0.0001, at + 0.14);
+    g.gain.linearRampToValueAtTime(0, at + 0.15);
     sN.connect(bp); bp.connect(g); g.connect(bgmBus);
-    const w = ctx.createGain(); w.gain.value = 0.05; g.connect(w); w.connect(verb);
-    sN.start(at); sN.stop(at + 0.18);
+    const w = ctx.createGain(); w.gain.value = 0.06;
+    g.connect(w); w.connect(verb);
+    sN.start(at); sN.stop(at + 0.2);
   }
 
   function tick(at, loud){
@@ -2200,7 +2297,7 @@ const SFX = (() => {
     const hp = ctx.createBiquadFilter();
     hp.type = "highpass"; hp.frequency.value = 8500;
     const g = ctx.createGain();
-    const pk = loud ? 0.015 : 0.007;
+    const pk = loud ? 0.012 : 0.006;
     g.gain.value = 0;
     g.gain.setValueAtTime(0, at);
     g.gain.linearRampToValueAtTime(pk, at + 0.0015);
@@ -2210,82 +2307,82 @@ const SFX = (() => {
     sN.start(at); sN.stop(at + 0.06);
   }
 
-  /* 16分×16＝1小節。
-     ドーパミンは「報酬そのもの」より「予測が立ってから当たる瞬間」に出る。
-     前作は全部を食い込ませたせいで、押し返す拍の土台ごと消えて曖昧になっていた。
-     今回はその仕組みを素直に作る。
-       1. 拍を四つ打ちで固定する。食い込みは、その上でだけ効く
-       2. 8小節で1つの弧を描く（登る → 頂点 → 降りる → 空白 → 戻る）
-       3. 最高音は1箇所だけ。ここが頂点になる
-       4. 終わりを属和音(E)にして、次の頭のAmへ引っ張る
-       5. 戻る直前に音を消す。空白が期待を作る */
+  /* 16分×16＝1小節、16小節で1周（約42秒）。
+     8小節でひとつの歌。前半は問いを積み、後半は同じ歌を一段高く再現して
+     13小節目のD6（1回だけの最高音）で開く。旋律は王道進行の構成音の上に書き、
+     半音でぶつかる音（b9）はゼロにしてある。 */
   const LEAD = [
-    /* 登る */
-    [69, 0, 0, 0, 72, 0,76, 0, 76, 0, 0, 0, 74, 0,72, 0],
-    [71, 0, 0, 0, 72, 0,74, 0, 72, 0, 0, 0,  0, 0, 0, 0],
-    [72, 0, 0, 0, 74, 0,77, 0, 77, 0, 0, 0, 76, 0,74, 0],
-    [74, 0, 0, 0, 76, 0,79, 0, 79, 0, 0, 0,  0, 0,79, 0],
-    /* 頂点。最高音はここだけ */
-    [81, 0, 0, 0, 79, 0,76, 0, 81, 0, 0, 0,  0, 0, 0, 0],
-    [79, 0,76, 0, 74, 0,72, 0, 74, 0, 0, 0,  0, 0, 0, 0],
-    /* 降りる */
-    [74, 0, 0, 0, 77, 0,74, 0, 72, 0, 0, 0,  0, 0, 0, 0],
-    /* 属和音で止めて、空白を作る＝ここが引っ張り */
-    [76, 0, 0, 0, 80, 0, 0, 0,  0, 0, 0, 0,  0, 0,69, 0],
-    /* 2周目。同じ弧を、少し飾って繰り返す */
-    [69, 0,69, 0, 72, 0,76, 0, 76, 0, 0, 0, 74, 0,72, 0],
-    [71, 0, 0, 0, 72, 0,74, 0, 72, 0,71, 0,  0, 0, 0, 0],
-    [72, 0,72, 0, 74, 0,77, 0, 77, 0, 0, 0, 76, 0,74, 0],
-    [74, 0, 0, 0, 76, 0,79, 0, 79, 0,81, 0,  0, 0,79, 0],
-    [81, 0, 0, 0, 79, 0,76, 0, 81, 0,84, 0, 81, 0, 0, 0],
-    [79, 0,76, 0, 74, 0,72, 0, 74, 0,76, 0,  0, 0, 0, 0],
-    [74, 0, 0, 0, 77, 0,74, 0, 72, 0,74, 0,  0, 0, 0, 0],
-    [76, 0, 0, 0, 80, 0, 0, 0,  0, 0, 0, 0,  0, 0,69, 0]
+    [81, 0, 0, 0, 79, 0,77, 0, 76, 0, 0, 0,  0, 0,74, 0],
+    [74, 0, 0, 0, 76, 0,74, 0, 71, 0, 0, 0,  0, 0,67, 0],
+    [71, 0, 0, 0, 74, 0,76, 0, 79, 0, 0, 0,  0, 0,76, 0],
+    [81, 0, 0, 0,  0, 0,76, 0, 72, 0,74, 0, 76, 0, 0, 0],
+    [77, 0, 0, 0, 76, 0,74, 0, 72, 0, 0, 0,  0, 0,72, 0],
+    [74, 0,76, 0, 79, 0, 0, 0, 74, 0, 0, 0,  0, 0,71, 0],
+    [79, 0, 0, 0, 76, 0,74, 0, 71, 0, 0, 0,  0, 0,71, 0],
+    [72, 0,74, 0, 76, 0, 0, 0, 69, 0, 0, 0,  0, 0, 0, 0],
+    [81, 0, 0, 0, 79, 0,77, 0, 76, 0, 0, 0,  0, 0,74, 0],
+    [74, 0, 0, 0, 76, 0,74, 0, 71, 0, 0, 0,  0, 0,67, 0],
+    [71, 0, 0, 0, 74, 0,76, 0, 79, 0,81, 0,  0, 0,79, 0],
+    [81, 0, 0, 0, 84, 0, 0, 0, 81, 0,79, 0, 76, 0, 0, 0],
+    [86, 0, 0, 0,  0, 0,84, 0, 81, 0, 0, 0,  0, 0,79, 0],
+    [79, 0,81, 0, 79, 0,76, 0, 74, 0, 0, 0,  0, 0,74, 0],
+    [76, 0, 0, 0, 74, 0,71, 0, 74, 0, 0, 0,  0, 0,79, 0],
+    [81, 0, 0, 0, 76, 0,74, 0, 72, 0, 0, 0, 69, 0, 0, 0]
   ];
-  /* Am Am C G / Am Am Dm E。最後の E が次の Am を呼ぶ。
-     旋律に E が多いので、3小節目は F ではなく C（E を含む）にしてある */
-  const ROOT = [45,45,48,43, 45,45,50,52, 45,45,48,43, 45,45,50,52];
-
-  /* ベースは頭を踏んでから食い込ませる。土台があるから跳ねが効く */
-  const BASS_HITS = [0, 6, 8, 14];
-  const BASS_OCT  = [0, 12, 0, 7];
+  /* 王道進行 F → G → Em → Am を回す */
+  const ROOT = [41,43,40,45, 41,43,40,45, 41,43,40,45, 41,43,40,45];
+  /* パッドの声部。Fmaj7 / G / Em7 / Am7 の艶 */
+  const PAD = {
+    41: [53,57,60,64],
+    43: [55,59,62,67],
+    40: [52,55,59,62],
+    45: [57,60,64,67]
+  };
+  /* ピアノのオスティナート用アルペジオ */
+  const ARP = {
+    41: [65,69,72,76],
+    43: [67,71,74,79],
+    40: [64,67,71,74],
+    45: [69,72,76,79]
+  };
+  const PATT = [0,1,2,3, 2,3,1,2];
 
   function scheduleBar(at, i){
     const b = i % 16, mel = LEAD[b], root = ROOT[b];
-    const S16 = EIGHTH / 2;
-    const gapBar = (b === 7 || b === 15);      // 戻る直前は抜く
+    const S16 = EIGHTH / 2, barDur = BEAT * 4;
 
+    /* 弦のパッドを小節いっぱいに敷く */
+    strings(PAD[root].map(HZ), at, barDur * 1.05, 0.015);
+
+    /* コントラバス：頭で踏み、3拍目で置き直し、4拍目裏で軽く動く */
+    bassOrch(HZ(root - 12), at, BEAT * 1.9, 0.11);
+    bassOrch(HZ(root - 12), at + BEAT * 2, BEAT * 1.4, 0.10);
+    bassOrch(HZ(root), at + BEAT * 3.5, BEAT * 0.45, 0.055);
+
+    /* ピアノのオスティナート（8分で淡々と回る） */
+    const arp = ARP[root];
+    for(let k = 0; k < 8; k++){
+      piano(HZ(arp[PATT[k]]), at + k * EIGHTH, 1.0, 0.030);
+    }
+
+    /* リード。次の音が来るまで伸ばして歌わせる */
     for(let k = 0; k < 16; k++){
       if(!mel[k]) continue;
       let len = 1;
       while(k + len < 16 && !mel[k + len]) len++;
-      const t = at + k * S16, d = S16 * len * 0.95;
-      chip(HZ(mel[k]), t, d, 0.055, 0.25, 0.12);
-      chip(HZ(mel[k] + 12), t, d * 0.5, 0.015, 0.12, 0.1);
+      horn(HZ(mel[k]), at + k * S16, S16 * len * 0.96, 0.05);
     }
-    BASS_HITS.forEach((k, j) => {
-      if(gapBar && k >= 8) return;             // 空白ではベースも引く
-      chip(HZ(root + BASS_OCT[j]), at + k * S16, S16 * 3.2, 0.075, 0.5);
-    });
 
-    /* 拍を四つ打ちで固定する。これが無いと食い込みが効かない */
-    for(let k = 0; k < 16; k += 4){
-      if(gapBar && k >= 8) break;
-      kick(at + k * S16, k === 0 ? 0.5 : 0.4);
-    }
-    /* 裏拍の手拍子 */
-    if(!gapBar || true){
-      clap(at + 4 * S16);
-      if(!gapBar) clap(at + 12 * S16);
-    }
-    for(let k = 0; k < 16; k += 2){
-      if(gapBar && k >= 10) break;
-      tick(at + k * S16, k % 8 === 0);
-    }
-    /* 8小節の終わりで畳みかけて、次の頭へ放り込む */
-    if(gapBar){
-      [12,13,14,15].forEach((k, j) => tick(at + k * S16, j % 2 === 1));
-      kick(at + 14 * S16, 0.45);
+    /* 打楽器はハーフタイム。フレーズ頭のティンパニと3拍目のクラップ */
+    if(b % 4 === 0) timpani(HZ(root - 12), at, 0.32);
+    kick(at, 0.4);
+    kick(at + 10 * S16, 0.28);
+    clap(at + 8 * S16);
+    for(let k = 2; k < 16; k += 2) tick(at + k * S16, k === 8);
+    /* 8小節の締めはティンパニで畳みかけ、次の周へ放り込む */
+    if(b === 7 || b === 15){
+      timpani(HZ(root - 12), at + 12 * S16, 0.2);
+      timpani(HZ(root - 12), at + 14 * S16, 0.28);
     }
   }
   function bgmLoop(){
