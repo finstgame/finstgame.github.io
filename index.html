@@ -231,6 +231,8 @@
     color:#0D1522; background:var(--wood);
     border-radius:4px; padding:1px 5px; white-space:nowrap;
   }
+  /* 縮小は狭められた側なので、拡張とは別の色にして一目で見分ける */
+  .hand-exp.shr{color:#F2F6FF; background:#5A3350;}
 
   /* lunge */
   .hand.lunge-down{animation:lungeDown .34s ease-in-out;}
@@ -1140,7 +1142,7 @@ const CARDS = {
   8:  {name:"ダブル",   timing:"attack",  text:"両手それぞれで1回ずつ攻撃する。同じ手を2回は狙えない"},
   9:  {name:"ヒール",   timing:"defense", text:"無効化した上で、任意の自分の手にダメージ分を追加（超過分は切り捨て／アウトの手も復活できる）"},
   10: {name:"コピー",   timing:"self",    text:"自分の両手を相手と同じ本数にする。カードはコピーしない"},
-  11: {name:"縮小",     timing:"self",    text:"相手の手を1つ選ぶ。その手の上限が1つ減る（5→4、6→5）。上限を超えていた指はあふれて落ちる"},
+  11: {name:"縮小",     timing:"self",    text:"相手の手を1つ選ぶ。その手の上限が1つ減る（5→4、6→5）。上限を超えていた指はあふれて落ちる。ただしその手が一度アウトになると解ける"},
   12: {name:"封印",     timing:"self",    text:"相手は次の自分の番、カードを使えない"},
 };
 const TIMING_LABEL = {self:"自ターン", attack:"攻撃", defense:"防御割り込み"};
@@ -1160,7 +1162,7 @@ const NET = {
 /* 紛らわしい文字（I L O 0 1）を除いた6文字 */
 const CODE_ALPHABET = "ABCDEFGHJKMNPQRSTUVWXYZ23456789";
 /* 同期する項目。sel / pick / step は各自の手元の操作なので送らない */
-const SYNC = ["hands","max","outAt","expanded","mode","cards","used","turn","phase","pending","over","winner","why","msg","hit","play","hist","seal","seq"];
+const SYNC = ["hands","max","outAt","expanded","shrunk","mode","cards","used","turn","phase","pending","over","winner","why","msg","hit","play","hist","seal","seq"];
 
 /* アウトの条件。部屋を作った側が決め、相手はそれを受け取る。
    quick … その数以上でアウト（手が落ちやすく、決着が早い）
@@ -1214,6 +1216,7 @@ function newState(){
     mode:  ruleMode,                     // quick | deep
     outAt: [[5,5],[5,5]],                // 手ごとのアウトの基準。拡張した手だけ 6
     expanded: [[false,false],[false,false]],  // 拡張したのはどの手か
+    shrunk:   [[false,false],[false,false]],  // 縮小されたのはどの手か
     cards: [deal(), deal()],
     used:  [[],[]],
     turn: Math.random() < 0.5 ? 0 : 1,   // 先攻はランダム
@@ -1855,7 +1858,9 @@ function openInfo(){
       <li>10種から3枚。<b>各1回きり</b>で補充なし</li>
       <li><b>相手の手札は見えない</b>（枚数だけ分かる）</li>
       <li>「防御割り込み」は<b>相手に攻撃されたとき</b>に使う。15秒で自動パス</li>
-      <li><b>拡張</b>は<b>選んだ片手だけ</b>、5でアウトが6でアウトになる。その手は5本まで持てる。<b>その手が一度アウトになると解ける</b></li>
+      <li><b>拡張</b>は<b>選んだ片手だけ</b>、5でアウトが6でアウトになる。その手は5本まで持てる</li>
+      <li><b>縮小</b>は相手の片手の上限を1つ減らす。あふれた指は落ちる</li>
+      <li>拡張も縮小も、<b>その手が一度アウトになると解けて普通の手に戻る</b></li>
     </ul>
 
     <h4>オンライン</h4>
@@ -2708,7 +2713,9 @@ function handHTML(p,h){
             <div class="flash"></div>
             <div class="sticks">${sticks}</div>
             <div class="count">${out ? "OUT" : v}</div>
-            ${S.expanded[p][h] ? `<div class="hand-exp">${S.outAt[p][h]}でアウト</div>` : ""}
+            ${S.expanded[p][h] || (S.shrunk && S.shrunk[p][h])
+                ? `<div class="hand-exp${S.shrunk && S.shrunk[p][h] ? " shr" : ""}">${S.outAt[p][h]}でアウト</div>`
+                : ""}
           </div>`;
 }
 
@@ -3009,7 +3016,7 @@ async function resolvePending(){
 
   note(p.from, `${p.damage}ダメージ → ${NAMES[p.to]}の${hn(p.toHand)}手が`
     + (after === 0 ? "アウト" : `${after}本`));
-  dropExpandOnOut();          // 2回目の攻撃は、解けた後の基準で計算する
+  dropHandModsOnOut();          // 2回目の攻撃は、解けた後の基準で計算する
   S.pending = null;
   if(checkDeath()) return;
 
@@ -3389,6 +3396,9 @@ async function runShrink(me, tp, th){
   S.max[tp][th]   = Math.max(1, beforeMax - 1);
   S.outAt[tp][th] = S.max[tp][th] + 1;
   if(S.max[tp][th] <= 4) S.expanded[tp][th] = false;   // 元の広さに戻ったら拡張は消える
+  /* 拡張を打ち消しただけなら「縮小されている」ことにはしない。
+     普通の広さより狭くなったときだけ印を付け、その手が落ちたら元に戻す */
+  handMods(S).shrunk[tp][th] = S.max[tp][th] < 4;
   const after = Math.min(before, S.max[tp][th]);
   const spill = before - after;
   S.hands[tp][th] = after;
@@ -3397,7 +3407,7 @@ async function runShrink(me, tp, th){
   render();
   if(checkDeath(me)) return;
   endTurn(`<b>${NAMES[me]}</b>の縮小。<span class="sub">${NAMES[tp]}の${hn(th)}手が上限${beforeMax} → ${S.max[tp][th]}`
-    + (spill > 0 ? `／${before} → ${after}本` : "") + `（${outDesc(tp, th)}）</span>`);
+    + (spill > 0 ? `／${before} → ${after}本` : "") + `（${outDesc(tp, th)}／落ちると解ける）</span>`);
 }
 
 /* 封印：相手は次の自分の番、カードを使えない */
@@ -3952,8 +3962,8 @@ function endTurn(msg){
     S.seal[S.turn]--;
     if(S.seal[S.turn] === 0) msg += `<span class="sub">${NAMES[S.turn]}の封印が解けた</span>`;
   }
-  const lost = dropExpandOnOut();
-  if(lost) msg += `<span class="sub">${NAMES[lost.p]}の${hn(lost.h)}手が落ちたので、拡張は解けた</span>`;
+  dropHandModsOnOut().forEach(l =>
+    msg += `<span class="sub">${NAMES[l.p]}の${hn(l.h)}手が落ちたので、${l.kind}は解けた</span>`);
   S.doubleQueue = null;
   /* 保険：どの経路から来ても、両手アウトのプレイヤーが居るまま手番を回さない */
   if(dead(0) || dead(1)){ S.pending = null; S.step = null; checkDeath(); return; }
@@ -3974,23 +3984,32 @@ function endTurn(msg){
 }
 
 /* 両手ともアウトなら負け。自分のカードで自滅した場合も同じ扱い。 */
-/* 拡張した手が一度アウトになったら、その手の拡張は失われる。
-   分配や召喚で戻ってきても、また4本まで・5でアウトの手に戻る。 */
-function dropExpandOnOut(){
-  let lost = null;
+/* 古い状態が同期されてきても落ちないように、shrunk を必ず用意する */
+function handMods(st){
+  if(!st.shrunk) st.shrunk = [[false,false],[false,false]];
+  return st;
+}
+
+/* 手の広さを変えるカード（拡張・縮小）は、その手が一度アウトになると解ける。
+   分配や召喚で戻ってきても、4本まで・5でアウトの普通の手に戻る。 */
+function dropHandModsOnOut(){
+  const lost = [];
+  handMods(S);
   [0,1].forEach(p => [0,1].forEach(h => {
-    if(S.hands[p][h] === 0 && S.expanded[p][h]){
-      S.expanded[p][h] = false;
-      S.max[p][h] = 4;
-      S.outAt[p][h] = 5;
-      lost = {p, h};
-    }
+    if(S.hands[p][h] !== 0) return;
+    const wasExp = S.expanded[p][h], wasShr = S.shrunk[p][h];
+    if(!wasExp && !wasShr) return;
+    S.expanded[p][h] = false;
+    S.shrunk[p][h]   = false;
+    S.max[p][h]   = 4;
+    S.outAt[p][h] = 5;
+    lost.push({p, h, kind: wasExp ? "拡張" : "縮小"});
   }));
   return lost;
 }
 
 function checkDeath(actor){
-  dropExpandOnOut();
+  dropHandModsOnOut();
   const d0 = dead(0), d1 = dead(1);
   if(!d0 && !d1) return false;
   /* 同時に両者が落ちることは本来起きないが、起きた場合は行動した側の負けにする */
