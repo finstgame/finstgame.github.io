@@ -2419,32 +2419,32 @@ const SFX = (() => {
     const isB = b >= 8;                          // 後半＝編成が厚くなる
 
     /* 低音弦：根音を低い位置でもう1枚敷く（重厚感の土台） */
-    susString(HZ(root), at, barDur * 1.05, 0.016,
+    susString(HZ(root), at, barDur * 1.05, 0.022,
       {cut:750, atk:0.28, vib:4, vibRate:4.5, wet:1.2});
     /* 中低弦（ヴィオラ・チェロ）の和音 */
     PAD[root].forEach(n =>
-      susString(HZ(n), at, barDur * 1.05, 0.011,
+      susString(HZ(n), at, barDur * 1.05, 0.026,
         {cut:1150, atk:0.3, vib:5, vibRate:4.8, wet:1.5}));
     /* 高弦（ヴァイオリン）は上2声を1オクターブ上で */
     [PAD[root][2] + 12, PAD[root][3] + 12].forEach(n =>
-      susString(HZ(n), at, barDur * 1.05, 0.0075,
+      susString(HZ(n), at, barDur * 1.05, 0.020,
         {cut:2400, atk:0.35, vib:8, vibRate:5.4, wet:1.8}));
     /* チェロの動く線：根音 → 5度 */
-    susString(HZ(root + 12), at, BEAT * 2.05, 0.024,
+    susString(HZ(root + 12), at, BEAT * 2.05, 0.040,
       {cut:900, atk:0.12, vib:6, vibRate:5, wet:1.2});
-    susString(HZ(root + 19), at + BEAT * 2, BEAT * 2.0, 0.022,
+    susString(HZ(root + 19), at + BEAT * 2, BEAT * 2.0, 0.038,
       {cut:900, atk:0.12, vib:6, vibRate:5, wet:1.2});
     /* 低いブラス（トロンボーン相当）。低い鋸をローパスで暗く鳴らす */
-    horn(HZ(root + 12), at, barDur * 0.98, isB ? 0.026 : 0.018);
+    horn(HZ(root + 12), at, barDur * 0.98, isB ? 0.038 : 0.028);
     /* コントラバス */
-    bassOrch(HZ(root - 12), at, BEAT * 1.9, 0.13);
-    bassOrch(HZ(root - 12), at + BEAT * 2, BEAT * 1.4, 0.115);
+    bassOrch(HZ(root - 12), at, BEAT * 1.9, 0.055);
+    bassOrch(HZ(root - 12), at + BEAT * 2, BEAT * 1.4, 0.048);
 
     /* ピチカートのオスティナート。後半はピアノが重なって前へ出る */
     const arp = ARP[root];
     for(let k = 0; k < 8; k++){
-      pizz(HZ(arp[PATT[k]]), at + k * EIGHTH, 0.034);
-      if(isB) piano(HZ(arp[PATT[k]]), at + k * EIGHTH, 0.9, 0.02);
+      pizz(HZ(arp[PATT[k]]), at + k * EIGHTH, 0.055);
+      if(isB) piano(HZ(arp[PATT[k]]), at + k * EIGHTH, 0.9, 0.034);
     }
 
     /* 旋律はヴァイオリン。後半はホルンとフルート（1オクターブ上）が重なる */
@@ -2454,28 +2454,28 @@ const SFX = (() => {
       let len = 1;
       while(k + len < 16 && !mel[k + len]) len++;
       const t = at + k * S16, d = S16 * len * 0.96;
-      susString(HZ(mel[k]), t, d, 0.040,
+      susString(HZ(mel[k]), t, d, 0.085,
         {cut:3000, atk:0.06, rel:0.12, vib:9, vibRate:5.6, wet:1.2});
       /* チェロが1オクターブ下で同じ旋律を弾く＝重厚なユニゾン */
-      susString(HZ(mel[k] - 12), t, d, 0.020,
+      susString(HZ(mel[k] - 12), t, d, 0.048,
         {cut:1100, atk:0.08, rel:0.12, vib:6, vibRate:5, wet:1.0});
       if(isB){
-        horn(HZ(mel[k]), t, d, 0.024);
-        flute(HZ(mel[k] + 12), t, d, 0.010);
-        if(firstNote){ glock(HZ(mel[k] + 12), t, 0.026); firstNote = false; }
+        horn(HZ(mel[k]), t, d, 0.040);
+        flute(HZ(mel[k] + 12), t, d, 0.020);
+        if(firstNote){ glock(HZ(mel[k] + 12), t, 0.040); firstNote = false; }
       }
     }
 
     /* 打楽器はハーフタイム */
-    if(b % 2 === 0) timpani(HZ(root - 12), at, 0.34);
-    kick(at, 0.42);
-    kick(at + 10 * S16, 0.24);
+    if(b % 2 === 0) timpani(HZ(root - 12), at, 0.20);
+    kick(at, 0.16);
+    kick(at + 10 * S16, 0.09);
     clap(at + 8 * S16);
     for(let k = 2; k < 16; k += 2) tick(at + k * S16, k === 8);
     /* 8小節の締め：ティンパニ＋ハープの駆け上がりで次の段へ */
     if(b === 7 || b === 15){
-      timpani(HZ(root - 12), at + 12 * S16, 0.18);
-      timpani(HZ(root - 12), at + 14 * S16, 0.26);
+      timpani(HZ(root - 12), at + 12 * S16, 0.12);
+      timpani(HZ(root - 12), at + 14 * S16, 0.17);
       [57,60,64,69,72,76,79,84].forEach((n, j) =>
         pizz(HZ(n), at + barDur - 0.5 + j * 0.058, 0.018 + j * 0.002, 0.5));
     }
