@@ -2136,7 +2136,7 @@ const SFX = (() => {
      フィル・残響を足していたから。すべて外して、
      細いパルス波・残響なし・一定の密度、という古い携帯ゲーム機の作りに寄せる。 */
   let bgmOn = false, bgmTimer = null, bar = 0, nextAt = 0;
-  const BPM = 168, BEAT = 60 / BPM, EIGHTH = BEAT / 2;
+  const BPM = 140, BEAT = 60 / BPM, EIGHTH = BEAT / 2;
   const HZ = m => 440 * Math.pow(2, (m - 69) / 12);
 
   /* ---- 音源：機械音（パルス波）----
@@ -2179,6 +2179,22 @@ const SFX = (() => {
     o.start(at); o.stop(at + 0.36);
   }
 
+  /* 手拍子。裏拍に置くと体が動く＝中毒性の芯 */
+  function clap(at){
+    const sN = ctx.createBufferSource(); sN.buffer = noiseBuf();
+    const bp = ctx.createBiquadFilter();
+    bp.type = "bandpass"; bp.frequency.value = 1500; bp.Q.value = 0.9;
+    const g = ctx.createGain();
+    g.gain.value = 0;
+    g.gain.setValueAtTime(0, at);
+    g.gain.linearRampToValueAtTime(0.075, at + 0.002);
+    g.gain.exponentialRampToValueAtTime(0.0001, at + 0.13);
+    g.gain.linearRampToValueAtTime(0, at + 0.14);
+    sN.connect(bp); bp.connect(g); g.connect(bgmBus);
+    const w = ctx.createGain(); w.gain.value = 0.05; g.connect(w); w.connect(verb);
+    sN.start(at); sN.stop(at + 0.18);
+  }
+
   function tick(at, loud){
     const sN = ctx.createBufferSource(); sN.buffer = noiseBuf();
     const hp = ctx.createBiquadFilter();
@@ -2194,47 +2210,66 @@ const SFX = (() => {
     sN.start(at); sN.stop(at + 0.06);
   }
 
-  /* 8分×8＝1小節。
-     テトリスの手触りに寄せる。芯は「短調の音階を階段状に上下する動き」と
-     「半音（B-C、C#-D、G#-A、E-F）が生む民謡くささ」。
-     曲そのものは自前で、原曲（Korobeiniki）は写していない。 */
+  /* 16分×16＝1小節。
+     中毒性を狙って作った。効いているのは次の4つ。
+       1. 2小節の短いフックを、すぐ繰り返す
+       2. 拍の上に乗せず食い込ませる（3・6・10・14歩目）
+       3. 隙間を作る。埋めない方が頭に残る
+       4. 音域を狭く保ち、跳ぶのは1箇所だけ
+     和音は Am - F - C - G。旋律はこの4つに乗る音だけで書いてある。 */
   const LEAD = [
-    [76, 0,71,72, 74, 0,72,71],
-    [69, 0,69,71, 72, 0,74, 0],
-    [76, 0,74,72, 71, 0,72,74],
-    [72, 0,71, 0, 69, 0, 0, 0],
-    [74, 0,74,76, 77, 0,76,74],
-    [72, 0,72,74, 76, 0,72, 0],
-    [71, 0,74, 0, 73, 0,74, 0],
-    [69, 0, 0, 0,  0, 0,76,77],
-    /* B: 一段上げて畳みかける */
-    [81, 0,79,77, 76, 0,77,79],
-    [77, 0,76,74, 72, 0,74,76],
-    [81, 0,79,77, 76, 0,77,79],
-    [80, 0, 0, 0, 76, 0, 0, 0],
-    [81,84,81,79, 77, 0,76, 0],
-    [74, 0,76,77, 79, 0,77,76],
-    [74, 0,72, 0, 71, 0,73, 0],
-    [69, 0, 0, 0,  0, 0, 0, 0]
+    /* A: フック（問い） */
+    [76, 0, 0,76,  0,74, 0,72,  0, 0,74, 0, 72, 0,69, 0],
+    [69, 0, 0,72,  0, 0,74, 0, 76, 0, 0, 0,  0, 0, 0, 0],
+    [76, 0, 0,76,  0,74, 0,72,  0, 0,74, 0, 72, 0,69, 0],
+    [72, 0, 0,74,  0, 0,76, 0, 79, 0,76, 0, 74, 0, 0, 0],
+    /* A': 同じフックだが、答えは上へ抜ける */
+    [76, 0, 0,76,  0,74, 0,72,  0, 0,74, 0, 72, 0,69, 0],
+    [69, 0, 0,72,  0, 0,74, 0, 76, 0, 0, 0,  0, 0,79, 0],
+    [81, 0, 0,79,  0,76, 0,74,  0, 0,76, 0, 74, 0,72, 0],
+    [69, 0, 0, 0,  0, 0,69, 0, 72, 0,74, 0,  0, 0, 0, 0],
+    /* B: 対比。音を伸ばして間を作る */
+    [81, 0, 0, 0,  0, 0,79, 0, 76, 0, 0, 0,  0, 0, 0, 0],
+    [74, 0, 0,76,  0, 0,79, 0,  0, 0,76, 0,  0, 0, 0, 0],
+    [72, 0, 0, 0,  0, 0,74, 0, 76, 0, 0, 0, 79, 0, 0, 0],
+    [76, 0,74, 0, 72, 0, 0, 0,  0, 0,69, 0,  0, 0, 0, 0],
+    /* A に戻って締める */
+    [76, 0, 0,76,  0,74, 0,72,  0, 0,74, 0, 72, 0,69, 0],
+    [69, 0, 0,72,  0, 0,74, 0, 76, 0, 0, 0,  0, 0, 0, 0],
+    [79, 0, 0,79,  0,76, 0,74,  0, 0,72, 0, 74, 0,76, 0],
+    [69, 0, 0, 0,  0, 0, 0, 0, 69, 0, 0, 0,  0, 0,74,76]
   ];
-  /* Am Am Am Am | Dm Dm E E | Am Am Dm Dm | E E Am E */
-  /* 旋律と1小節ずつ突き合わせて選んだ根音。
-     ベースは根音とオクターブしか鳴らさないので、根音が旋律と半音でぶつかると濁る。
-     Am Dm G Am / Dm Am E Am / Dm Dm Dm E / C Dm E Am */
-  const ROOT = [45,50,55,45, 50,45,52,45, 50,50,50,52, 48,50,52,45];
+  /* Am - Dm - C - G を回す。最も耳に残る循環の一つ。
+     旋律に E が多いので、F ではなく Dm にして半音のぶつかりを避けている */
+  const ROOT = [45,50,48,43, 45,50,48,43, 45,50,48,43, 45,50,48,43];
+
+  /* ベースは拍を埋めず、食い込ませて跳ねを作る */
+  const BASS_HITS = [0, 6, 10, 14];
+  const BASS_OCT  = [0, 0, 7, 12];
 
   function scheduleBar(at, i){
     const b = i % 16, mel = LEAD[b], root = ROOT[b];
-    for(let k = 0; k < 8; k++){
-      const t = at + k * EIGHTH;
-      /* ベースはオクターブを往復させて前に進ませる */
-      chip(HZ(root + (k % 2 ? 12 : 0)), t, EIGHTH * 0.9, 0.062, 0.5);
-      /* 旋律 */
-      if(mel[k]) chip(HZ(mel[k]), t, EIGHTH * 1.25, 0.05, 0.25, 0.10);
-      /* 低音のドラムは表拍に */
-      if(k === 0 || k === 4) kick(t, k === 0 ? 0.45 : 0.34);
-      tick(t, k % 2 === 1);
+    const STEP16 = EIGHTH / 2;
+
+    /* 旋律。次に音が来るまで伸ばして、隙間をはっきりさせる */
+    for(let k = 0; k < 16; k++){
+      if(!mel[k]) continue;
+      let len = 1;
+      while(k + len < 16 && !mel[k + len]) len++;
+      const t = at + k * STEP16, d = STEP16 * len * 0.95;
+      chip(HZ(mel[k]), t, d, 0.05, 0.25, 0.12);
+      chip(HZ(mel[k] + 12), t, d * 0.5, 0.014, 0.12, 0.1);   // 上に薄く重ねて前へ出す
     }
+    /* ベース */
+    BASS_HITS.forEach((k, j) => {
+      chip(HZ(root + BASS_OCT[j]), at + k * STEP16, STEP16 * 3.4, 0.07, 0.5);
+    });
+    /* 打楽器。頭とキメで踏んで、8歩目に手拍子 */
+    kick(at, 0.5);
+    kick(at + 10 * STEP16, 0.42);
+    clap(at + 8 * STEP16);
+    for(let k = 0; k < 16; k += 2) tick(at + k * STEP16, k % 8 === 0);
+    tick(at + 14 * STEP16, true);
   }
   function bgmLoop(){
     if(!bgmOn || !ctx) return;
