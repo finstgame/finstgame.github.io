@@ -2218,7 +2218,10 @@ const SFX = (() => {
     [69, 0, 0, 0,  0, 0, 0, 0]
   ];
   /* Am Am Am Am | Dm Dm E E | Am Am Dm Dm | E E Am E */
-  const ROOT = [45,45,45,45, 50,50,52,52, 45,45,50,50, 52,52,45,52];
+  /* 旋律と1小節ずつ突き合わせて選んだ根音。
+     ベースは根音とオクターブしか鳴らさないので、根音が旋律と半音でぶつかると濁る。
+     Am Dm G Am / Dm Am E Am / Dm Dm Dm E / C Dm E Am */
+  const ROOT = [45,50,55,45, 50,45,52,45, 50,50,50,52, 48,50,52,45];
 
   function scheduleBar(at, i){
     const b = i % 16, mel = LEAD[b], root = ROOT[b];
