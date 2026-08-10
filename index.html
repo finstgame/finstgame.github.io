@@ -2821,7 +2821,20 @@ function enterDefense(){
   const p = S.pending;
   p.responder = p.to;
   const hasDefense = S.cards[p.to].some(id => CARDS[id].timing === "defense");
-  if(!hasDefense){ resolvePending(); return; }
+  if(!hasDefense){
+    /* 1台でCPUと遊ぶ時だけ、攻撃が宣言されたことを一拍見せてから解決する。
+       「防御カードを持っていない時だけ待つ」と、待ち時間そのものが
+       手札を漏らしてしまう。だから待つ長さは CPU が考える時間（defend）と
+       同じにして、持っていても持っていなくても見分けがつかないようにする。 */
+    if(!online && S.cpu){
+      S.msg = attackDesc(p);
+      render(); say(S.msg);
+      busy = true;
+      cpuTimer = setTimeout(() => { busy = false; resolvePending(); }, CPU_DELAY.beat);
+      return;
+    }
+    resolvePending(); return;
+  }
 
   S.phase = "defense";
   p.deadline = Date.now() + RESPONSE_MS;
@@ -3444,7 +3457,9 @@ async function runExpand(me, h){
    ========================================================= */
 let cpuTimer = null;
 
-const CPU_DELAY = { think: 750, step: 480, defend: 900 };
+/* CPU戦の間合い。速いと何が起きたのか読み取れないので、一拍ずつ置く。
+   beat と defend を同じ長さにしてあるのは意味がある（enterDefense の説明を見よ）*/
+const CPU_DELAY = { think: 1500, step: 850, defend: 1200, beat: 1200 };
 
 /* この攻撃で相手の手が落ちるか */
 function wouldOut(dmg, dp, dh){
