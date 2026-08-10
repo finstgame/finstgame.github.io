@@ -3313,6 +3313,7 @@ function openNumbers(){
   choices.forEach(c => {
     const b = document.createElement("button");
     b.className = "opt" + (c.kill ? " kill" : "");
+    b.dataset.n = c.n;                 // CPUが狙った数を押せるようにする
     b.innerHTML = `${c.label}<small>${c.note}</small>`;
     b.onclick = () => stepGotNumber(c.n);
     box.appendChild(b);
@@ -3535,25 +3536,68 @@ function simEval(st, me){
        + (simThreats(st, opp) - simThreats(st, me)) * 40
        + ((st.h[opp][0] + st.h[opp][1]) - (st.h[me][0] + st.h[me][1])) * 2;
 }
-/* 自分の手 → 相手の最善の返し、まで見て一番マシな手を返す */
+/* 手番を交互に進めて読む。自分の番は最大、相手の番は最小を取る。
+   1手先（相手の返しまで）だと、手を伸ばすカードは「本数が増えた」ぶん
+   損にしか見えず永久に使われない。伸ばした手で次に落とせることまで
+   見えて初めて、隕石や召喚の価値が正しく出る。 */
+const CPU_PLY = 3;                                     // 相手 → 自分 → 相手
+function simBest(st, turn, me, depth){
+  if(simAlive(st, 0) === 0) return me === 1 ? 100000 : -100000;
+  if(simAlive(st, 1) === 0) return me === 1 ? -100000 : 100000;
+  if(depth === 0) return simEval(st, me);
+  const mvs = simMoves(st, turn);
+  if(!mvs.length) return simEval(st, me);
+  let best = turn === me ? -Infinity : Infinity;
+  for(const mv of mvs){
+    const v = simBest(simApply(st, turn, mv), 1 - turn, me, depth - 1);
+    best = turn === me ? Math.max(best, v) : Math.min(best, v);
+    if(best === (turn === me ? 100000 : -100000)) break;   // それ以上見なくていい
+  }
+  return best;
+}
+/* 自分の手を全部試して、一番マシなものを返す */
 function cpuSearch(){
   const me = 1, st = snapForSearch();
   let best = null, bestScore = -Infinity;
   simMoves(st, me).forEach(mv => {
     const after = simApply(st, me, mv);
-    let score;
-    if(simAlive(after, 0) === 0){
-      score = 100000;                                  // その場で勝てる
-    } else {
-      let worst = Infinity;
-      simMoves(after, 0).forEach(rm => {
-        worst = Math.min(worst, simEval(simApply(after, 0, rm), me));
-      });
-      score = worst === Infinity ? simEval(after, me) : worst;
-    }
+    const score = simAlive(after, 0) === 0 ? 100000 : simBest(after, 0, me, CPU_PLY);
     if(score > bestScore){ bestScore = score; best = mv; }
   });
   return { mv: best, score: bestScore };
+}
+
+/* 隕石・召喚で「何本にするか」を、相手の返しまで読んで決める。
+   以前は常に上限まで伸ばしていたので、4本の手を作っては
+   1本で殴られて落ちるという自滅をくり返していた。
+   評価軸は通常の手（cpuSearch）と同じなので、点数を直接比べられる。 */
+function cpuCountScore(h, val){
+  const me = 1, b = snapForSearch();
+  const st = { h:[b.h[0].slice(), b.h[1].slice()], o:[b.o[0].slice(), b.o[1].slice()],
+               mx:[b.mx[0].slice(), b.mx[1].slice()], mode: b.mode };
+  st.h[me][h] = val;
+  return simBest(st, 0, me, CPU_PLY);                // 通常手とまったく同じ物差し
+}
+/* その本数にした手が、相手の生きている手ひとつで即座に落とされるか。
+   このゲームは上限ぴったりの手（4本）がいちばん脆く、相手の1本で落ちる。
+   先読みの点数だけだと「落とされても分配で戻せる」ぶん軽く見えてしまうので、
+   カードを1枚使い切ってまで作る形としては別枠で弾く。 */
+function cpuDiesAtOnce(h, val){
+  const me = 1, opp = 0;
+  return [0,1].some(ah => S.hands[opp][ah] > 0 &&
+    simNorm(val + S.hands[opp][ah], S.outAt[me][h], S.mode) === 0);
+}
+/* {h, val, pick} の候補から一番マシなものを選ぶ。
+   すぐ落とされる本数は避ける（それしか無いときだけ許す）。同点なら少ない方。 */
+function cpuBestCount(cands){
+  const safe = cands.filter(c => !cpuDiesAtOnce(c.h, c.val));
+  const pool = safe.length ? safe : cands;
+  let best = null, bestScore = -Infinity;
+  pool.forEach(c => {
+    const sc = cpuCountScore(c.h, c.val);
+    if(sc > bestScore || (sc === bestScore && best && c.val < best.val)){ bestScore = sc; best = c; }
+  });
+  return best ? Object.assign({score: bestScore, safe: safe.length > 0}, best) : null;
 }
 
 /* 攻め手を全部並べて点を付ける */
@@ -3606,8 +3650,15 @@ function cpuAct(){
       }
     }
   }
-  /* 片手が落ちていれば召喚で戻す */
-  if(has(4) && S.hands[me].includes(0)) return cpuUseSummon();
+  /* 片手が落ちていれば召喚で戻す。何本生み出すかは先読みで決める */
+  if(has(4) && S.hands[me].includes(0)){
+    const sh = S.hands[me].indexOf(0), cands = [];
+    for(let n = 1; n <= S.max[me][sh]; n++) cands.push({h: sh, val: n, pick: n});
+    const best = cpuBestCount(cands);
+    /* どの本数を選んでも即座に落とされる場面では、カードを切らずに温存する */
+    if(best && (best.safe || best.score >= 100000) && best.score >= cpuSearch().score)
+      return cpuUseSummon(best.pick);
+  }
   /* 相手の方が本数が多いならコピー */
   if(has(10)){
     const mine = S.hands[me][0] + S.hands[me][1];
@@ -3644,10 +3695,18 @@ function cpuAct(){
     const theirs = S.hands[opp][0] + S.hands[opp][1];
     if(theirs >= mine) return cpuUseCard(12);
   }
-  /* 隕石で自分の手を伸ばす */
+  /* 隕石：どの手を何本伸ばすかを全通り見て決める。
+     伸ばさずに普通に動いた方がマシなら、カードは温存する */
   if(has(3)){
-    const h = [0,1].find(x => S.hands[me][x] > 0 && S.hands[me][x] < S.max[me][x]);
-    if(h !== undefined) return cpuUseMeteor(h);
+    const cands = [];
+    [0,1].forEach(h => {
+      if(S.hands[me][h] <= 0) return;
+      for(let n = 1; S.hands[me][h] + n <= S.max[me][h]; n++)
+        cands.push({h, val: S.hands[me][h] + n, pick: n});
+    });
+    const best = cpuBestCount(cands);
+    if(best && (best.safe || best.score >= 100000) && best.score > cpuSearch().score)
+      return cpuUseMeteor(best.h, best.pick);
   }
 
   /* 攻撃と分配は先読みで決める */
@@ -3672,21 +3731,21 @@ function cpuUseExpand(h){
   useCard(5);
   cpuTimer = setTimeout(() => tap(1, h), CPU_DELAY.step);
 }
-function cpuUseSummon(){
-  useCard(4);
-  cpuTimer = setTimeout(() => {
-    const opts = [...document.querySelectorAll('#numOpts .opt')];
-    if(opts.length) opts[opts.length-1].click();     // 出せるだけ出す
-  }, CPU_DELAY.step);
+/* 先読みで決めた数字を押す。見つからなければ一番小さい数（安全側）に倒す */
+function cpuPickNumber(n){
+  const box = document.getElementById("numOpts");
+  const el = box.querySelector(`.opt[data-n="${n}"]`) || box.querySelector(".opt");
+  if(el) el.click();
 }
-function cpuUseMeteor(h){
+function cpuUseSummon(n){
+  useCard(4);
+  cpuTimer = setTimeout(() => cpuPickNumber(n), CPU_DELAY.step);
+}
+function cpuUseMeteor(h, add){
   useCard(3);
   cpuTimer = setTimeout(() => {
     tap(1, h);
-    cpuTimer = setTimeout(() => {
-      const opts = [...document.querySelectorAll('#numOpts .opt')];
-      if(opts.length) opts[opts.length-1].click();   // 上限まで伸ばす
-    }, CPU_DELAY.step);
+    cpuTimer = setTimeout(() => cpuPickNumber(add), CPU_DELAY.step);
   }, CPU_DELAY.step);
 }
 function cpuUseShrink(th){
