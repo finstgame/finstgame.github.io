@@ -226,6 +226,40 @@
     color:var(--c);
   }
   .hand[data-out="true"] .count{color:#3B4A69; font-size:14px; padding:4px 0;}
+  /* ---- レート表示 ---- */
+  .rate-card{
+    display:flex; align-items:center; justify-content:space-between; gap:10px;
+    background:rgba(255,255,255,.05); border:1px solid rgba(255,255,255,.10);
+    border-radius:12px; padding:10px 14px; margin:0 0 10px;
+  }
+  .rate-main{display:flex; align-items:baseline; gap:10px;}
+  .rate-rank{
+    font-size:12px; font-weight:800; letter-spacing:.08em;
+    padding:3px 9px; border-radius:999px;
+    color:#0D1522; background:var(--wood);
+  }
+  .rate-rank[data-r="マスター"]{background:#E9C46A;}
+  .rate-rank[data-r="ダイヤ"]  {background:#8FD3E8;}
+  .rate-rank[data-r="プラチナ"]{background:#CFD8E3;}
+  .rate-rank[data-r="ゴールド"]{background:#D9A741;}
+  .rate-rank[data-r="シルバー"]{background:#AEB6C2;}
+  .rate-rank[data-r="ブロンズ"]{background:#B07B52;}
+  .rate-num{font-size:22px; font-weight:800; letter-spacing:.02em;}
+  .rate-sub{font-size:11px; opacity:.65; text-align:right; line-height:1.4;}
+
+  .win-rate{display:none; margin:2px 0 14px;}
+  .win-rate.open{display:block;}
+  .wr-line{display:flex; align-items:baseline; justify-content:center; gap:8px;}
+  .wr-old{font-size:16px; opacity:.5;}
+  .wr-arrow{opacity:.4;}
+  .wr-new{font-size:26px; font-weight:800;}
+  .wr-delta{
+    font-size:14px; font-weight:800; padding:2px 8px; border-radius:999px;
+    color:#0D1522; background:#7FC8A9;
+  }
+  .wr-delta[data-up="false"]{background:#D98383;}
+  .wr-sub{font-size:11px; opacity:.7; text-align:center; margin-top:4px;}
+
   .hand-exp{
     font-size:9px; font-weight:700; letter-spacing:.04em;
     color:#0D1522; background:var(--wood);
@@ -1110,6 +1144,7 @@
 <div class="win" id="win">
   <h2 id="winText"></h2>
   <div class="why" id="winWhy"></div>
+  <div class="win-rate" id="winRate"></div>
   <div class="recap" id="winRecap"></div>
   <button class="primary" id="winAgain" onclick="restart()">もう一戦</button>
   <button class="ghost" onclick="toLobby()">ロビーに戻る</button>
@@ -1582,18 +1617,72 @@ function enterGame(){
    本人が承知してから切り替える（対戦中に盤面が消えないように）。
    ========================================================= */
 let queueCode = null, queueChan = null, queuePoll = null, queueFound = false;
+let queueSeat = 0;                      // 掴んだ側なら1
+
+/* ---- レート ----
+   ランクはレートの言い換え。数字だけだと自分がどのあたりに居るのか掴めない。 */
+const RANKS = [
+  [1800, "マスター"], [1600, "ダイヤ"], [1400, "プラチナ"],
+  [1200, "ゴールド"], [1000, "シルバー"], [0, "ブロンズ"]
+];
+const rankOf = r => (RANKS.find(x => r >= x[0]) || RANKS[RANKS.length-1])[1];
+
+/* レート差の許容幅。待つほど広げて、最後は誰とでも当たるようにする。
+   最初から広いと格差マッチばかりになり、狭いままだと永久に当たらない。 */
+const BAND = { start: 150, step: 150, max: 4000, every: 8000 };
+let myRate = null;                      // {rating, games, wins, losses, best, rank_no}
+let queueBand = BAND.start, queueRetry = null, ratedRoom = false, ratingResult = null;
+
+async function loadMe(){
+  if(!sb) return null;
+  try{
+    const { data, error } = await sb.rpc("get_or_create_player", { p_id: myId });
+    if(error) return null;
+    myRate = Array.isArray(data) ? data[0] : data;
+    return myRate;
+  }catch(e){ return null; }
+}
+
+/* ロビーに出す自分の成績。まだ1戦もしていない人には「仮」だと伝える */
+function meHTML(){
+  if(!myRate) return "";
+  const r = myRate.rating, prov = myRate.games < 5;
+  return `<div class="rate-card">
+    <div class="rate-main">
+      <span class="rate-rank" data-r="${rankOf(r)}">${rankOf(r)}</span>
+      <span class="rate-num">${r}</span>
+    </div>
+    <div class="rate-sub">${prov
+      ? `あと${5 - myRate.games}戦で確定（いまは仮のレート）`
+      : `${myRate.games}戦 ${myRate.wins}勝${myRate.losses}敗・最高 ${myRate.best}${myRate.rank_no ? `・${myRate.rank_no}位` : ""}`}</div>
+  </div>`;
+}
 
 function queued(){ return !!queueCode; }
+
+/* レート対応版を呼ぶ。rating.sql をまだ流していない環境でも遊べるよう、
+   関数が無ければ古い4引数版に落とす。 */
+let matchRpcLegacy = false;
+async function callMatch(){
+  const base = { p_me: myId, p_mode: ruleMode, p_code: newCode(), p_state: newState() };
+  if(!matchRpcLegacy){
+    const res = await sb.rpc("match_random", Object.assign({
+      p_rating: (myRate && myRate.rating) || 1200, p_band: queueBand }, base));
+    if(!res.error) return res;
+    if(!/does not exist|schema cache|function/i.test(res.error.message || "")) return res;
+    matchRpcLegacy = true;               // 古いスキーマだった
+  }
+  return await sb.rpc("match_random", base);
+}
 
 async function randomMatch(){
   lobbyError("");
   if(!sb) return lobbyError("オンライン機能を読み込めませんでした");
   if(queued()) return;
 
-  const st = newState();
-  const { data, error } = await sb.rpc("match_random", {
-    p_me: myId, p_mode: ruleMode, p_code: newCode(), p_state: st
-  });
+  await loadMe();
+  queueBand = BAND.start;
+  const { data, error } = await callMatch();
   if(error) return lobbyError(explainQueue(error));
   const row = Array.isArray(data) ? data[0] : data;
   if(!row) return lobbyError("マッチングに失敗しました。もう一度お試しください");
@@ -1605,11 +1694,43 @@ async function randomMatch(){
 
   /* 自分が待つ側。CPU戦を始めて、裏で相手を待つ */
   queueCode = row.code;
+  queueSeat = 0;
   queueFound = false;
   await watchQueue(row.code);
+  startBandWidening();
   document.getElementById("lobby").classList.remove("open");
   startCPU();
   showQueueBar("waiting");
+}
+
+/* 待っている間、少しずつレート差の許容を広げて掴み直す。
+   掴みに行くとき自分の待ち部屋はサーバー側で畳まれるので、部屋の番号が変わる。
+   変わったら購読も張り直す。 */
+function startBandWidening(){
+  clearInterval(queueRetry);
+  queueRetry = setInterval(async () => {
+    if(!queueCode || queueFound) return;
+    if(queueBand >= BAND.max) return;
+    queueBand = Math.min(BAND.max, queueBand + BAND.step);
+    let row = null;
+    try{
+      const { data, error } = await callMatch();
+      if(error) return;
+      row = Array.isArray(data) ? data[0] : data;
+    }catch(e){ return; }
+    if(!row || !queueCode || queueFound) return;
+    if(row.seat === 1){                     // 自分から掴めた
+      queueCode = row.code; queueSeat = 1;
+      await watchQueue(row.code);
+      onOpponentFound();
+      return;
+    }
+    if(row.code !== queueCode){             // 待ち部屋が作り直された
+      queueCode = row.code; queueSeat = 0;
+      await watchQueue(row.code);
+    }
+    showQueueBar("waiting");
+  }, BAND.every);
 }
 
 function explainQueue(e){
@@ -1655,29 +1776,32 @@ function showQueueBar(mode){
       <button class="primary" onclick="acceptMatch()">対戦に移る</button>`;
   } else {
     bar.dataset.found = "false";
-    bar.innerHTML = `<span class="dots">相手を探しています</span>
+    const band = queueBand >= BAND.max
+      ? "だれでも" : `レート差 ±${queueBand}`;
+    bar.innerHTML = `<span class="dots">${band}で相手を探しています</span>
       <button class="ghost" onclick="cancelQueue()">やめる</button>`;
   }
   bar.classList.add("open");
 }
 
 async function acceptMatch(){
-  const code = queueCode;
+  const code = queueCode, mySeat = queueSeat;
   if(!code) return;
-  clearInterval(queuePoll);
+  clearInterval(queuePoll); clearInterval(queueRetry);
   if(queueChan){ try{ sb.removeChannel(queueChan); }catch(e){} queueChan = null; }
   queueCode = null; queueFound = false;
   document.getElementById("queueBar").classList.remove("open");
   cpuStop();
   if(S) S.cpu = false;
   NAMES[1] = "プレイヤー2";
-  await enterRandom(code, 0);
+  await enterRandom(code, mySeat);
 }
 
 async function enterRandom(code, mySeat){
   const { data: m, error } = await sb.from("matches").select("state").eq("room_code", code).maybeSingle();
   if(error || !m) return lobbyError("対戦データが見つかりませんでした");
   online = true; seat = mySeat;
+  ratedRoom = true; ratingResult = null;
   S = Object.assign({}, m.state, {sel:null, pick:null, step:null, cpu:false});
   NAMES[1] = "プレイヤー2";
   await connect(code);
@@ -1688,7 +1812,8 @@ async function enterRandom(code, mySeat){
 
 async function cancelQueue(){
   const code = queueCode;
-  clearInterval(queuePoll);
+  clearInterval(queuePoll); clearInterval(queueRetry);
+  queueBand = BAND.start;
   if(queueChan){ try{ sb.removeChannel(queueChan); }catch(e){} queueChan = null; }
   queueCode = null; queueFound = false;
   const bar = document.getElementById("queueBar");
@@ -1754,8 +1879,10 @@ function showLobby(mode){
       : "5以上になった手はそのままアウト。決着が早くつきます。"}</div>
 
     <h3>だれかと対戦する</h3>
+    <div id="meBox">${meHTML()}</div>
     <button class="primary" onclick="randomMatch()">ランダム対戦</button>
     <div class="lobby-note" id="queueSize">　</div>
+    <div class="lobby-note">近いレートの人から順に当たります。見つからなければ、待つほど広がって最後はだれとでも当たります。レートが動くのはランダム対戦だけです。</div>
 
     <h3>友達と対戦する</h3>
     <button class="ghost" style="width:100%" onclick="createRoom()">部屋を作る</button>
@@ -1774,6 +1901,11 @@ function showLobby(mode){
   const inp = document.getElementById("codeInput");
   inp.addEventListener("keydown", e => { if(e.key === "Enter") joinRoom(inp.value); });
   refreshQueueSize();
+  /* レートは後から届くので、届いたら差し替える */
+  loadMe().then(() => {
+    const box = document.getElementById("meBox");
+    if(box) box.innerHTML = meHTML();
+  });
 }
 
 function lobbyError(msg){
@@ -1999,6 +2131,7 @@ function restart(){
 }
 
 function reset(){
+  ratedRoom = false; ratingResult = null;
   /* CPUかどうかは呼んだ側が決める（startCPU が後から立てる）。
      ここで引き継ぐと、CPU戦から1台版へ移ったときにCPUのまま残る。 */
   S = Object.assign(newState(), {sel:null, pick:null, step:null});
@@ -4093,6 +4226,7 @@ function checkDeath(actor){
 }
 
 function finish(winner, why){
+  ratingResult = null;        // 前の試合の増減を持ち越さない
   S.over = true;
   S.phase = "finished";
   busy = true;
@@ -4107,6 +4241,51 @@ function finish(winner, why){
   showWin();
   say(S.msg);
   commit();
+  reportRating(winner);
+}
+
+/* 野良マッチの結果を送ってレートを動かす。
+   送るのは「自分が勝ったか」だけで、点数はサーバー側が決める。
+   両者が送ってくるが、1部屋につき1回しか記録されない。 */
+async function reportRating(winner){
+  if(!online || !ratedRoom || !sb || !room) return;
+  try{
+    const { data, error } = await sb.rpc("report_result",
+      { p_room: room, p_me: myId, p_won: winner === seat });
+    if(error) return;
+    const row = Array.isArray(data) ? data[0] : data;
+    if(!row) return;
+    /* 戻り値が new_rating なのは、SQL側で列名と衝突させないため（rating.sql の注記） */
+    ratingResult = { rating: row.new_rating, delta: row.delta,
+                     opp_rating: row.opp_rating, games: row.new_games };
+    if(myRate){ myRate.rating = ratingResult.rating; myRate.games = ratingResult.games;
+                if(winner === seat) myRate.wins = (myRate.wins || 0) + 1;
+                else myRate.losses = (myRate.losses || 0) + 1;
+                myRate.best = Math.max(myRate.best || 0, ratingResult.rating); }
+    else myRate = { rating: ratingResult.rating, games: ratingResult.games,
+                    wins: winner === seat ? 1 : 0, losses: winner === seat ? 0 : 1,
+                    best: ratingResult.rating };
+    showRatingDelta();
+  }catch(e){}
+}
+
+/* 勝敗画面に「1216 → 1232（+16）」を出す */
+function showRatingDelta(){
+  const box = document.getElementById("winRate");
+  if(!box || !ratingResult) return;
+  const r = ratingResult, before = r.rating - r.delta;
+  const up = r.delta >= 0;
+  box.innerHTML = `<div class="wr-line">
+      <span class="wr-old">${before}</span>
+      <span class="wr-arrow">→</span>
+      <span class="wr-new">${r.rating}</span>
+      <span class="wr-delta" data-up="${up}">${up ? "+" : ""}${r.delta}</span>
+    </div>
+    <div class="wr-sub">${rankOf(r.rating)}${
+      rankOf(before) !== rankOf(r.rating)
+        ? `<b>（${rankOf(before)} から ${up ? "昇格" : "降格"}）</b>` : ""
+    }${r.opp_rating ? `・相手 ${r.opp_rating}` : ""}</div>`;
+  box.classList.add("open");
 }
 
 /* 何をされて負けたのかを、使われたカードと直前の手で見せる */
@@ -4147,6 +4326,10 @@ function showWin(){
   document.getElementById("winText").innerHTML =
     (online ? (w === seat ? "あなた" : NAMES[w]) : NAMES[w]) + "<br>の勝ち";
   document.getElementById("winWhy").textContent = S.why || "両手ともアウトで決着";
+  const wr = document.getElementById("winRate");
+  wr.classList.remove("open"); wr.innerHTML = "";
+  if(ratingResult) showRatingDelta();
+  else if(online && ratedRoom) wr.innerHTML = `<div class="wr-sub">レートを計算しています…</div>`;
   document.getElementById("winRecap").innerHTML = recapHTML();
   document.getElementById("winAgain").textContent = online ? "もう一戦" : "最初から";
   document.getElementById("win").classList.add("open");
