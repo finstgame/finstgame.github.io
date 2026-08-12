@@ -53,6 +53,11 @@
 
   *{box-sizing:border-box; margin:0; padding:0; -webkit-tap-highlight-color:transparent;}
 
+  /* 横には動かさない。盤面は画面に収まる前提なので、左右のスクロールも
+     つまんで拡大した後の横ずれも要らない。clip は hidden と違って
+     スクロール領域を作らないので、これ自体が横移動の入口にならない。 */
+  html{overflow-x:clip;}
+
   body{
     background:
       radial-gradient(120% 80% at 50% 0%, #17253E 0%, transparent 60%),
@@ -68,6 +73,9 @@
        ここで避けておかないと上下が切れる（以前は下の padding:12px が
        この指定を打ち消していて効いていなかった）。 */
     padding:calc(10px + env(safe-area-inset-top)) 12px calc(12px + env(safe-area-inset-bottom));
+    overflow-x:clip;
+    touch-action:pan-y;              /* 指では縦にしか動かせないようにする */
+    overscroll-behavior-x:none;
   }
 
   .app{
@@ -930,7 +938,9 @@
     padding:20px 20px calc(28px + env(safe-area-inset-bottom));
     z-index:40;
   }
-  .lobby.open{display:grid;}
+  /* minmax(0,1fr) が要。ただの grid だと列が中身の最小幅まで広がってしまい、
+     左右の余白の外へはみ出して、画面を横に動かせるようになる。 */
+  .lobby.open{display:grid; grid-template-columns:minmax(0, 1fr);}
   .lobby-inner{margin:auto;}
 
   /* 盤面の上下は「自分が下」。オンラインでは席によって入れ替える */
