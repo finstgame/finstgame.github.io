@@ -40,24 +40,34 @@
     --p1:#FF5F7E;
     --wood:#E3B778;
     --stick-w: clamp(9px, 2.6vw, 14px);
-    --stick-h: clamp(46px, 12vw, 74px);
+    /* 横幅だけで寸法を決めると、背の低い端末（SEなど）や、ホーム画面から
+       開いてステータスバー・ホームバーに削られた時に入り切らない。
+       svh はノッチの下も含んだ数字なので、そこを引いた「本当に使える高さ」を
+       作って、これを基準に縦を詰める。狭いほど自動で引いた絵になる。 */
+    --vh-usable: calc(100svh - env(safe-area-inset-top) - env(safe-area-inset-bottom) - 22px);
+    --stick-h: clamp(38px, min(12vw, calc(var(--vh-usable) * 0.084)), 74px);
+    --gap-v:   clamp(6px, calc(var(--vh-usable) * 0.011), 10px);
+    --pad-b:   clamp(9px, calc(var(--vh-usable) * 0.017), 14px);
     --r: 14px;
   }
 
   *{box-sizing:border-box; margin:0; padding:0; -webkit-tap-highlight-color:transparent;}
 
   body{
-    padding-bottom:calc(12px + env(safe-area-inset-bottom));
     background:
       radial-gradient(120% 80% at 50% 0%, #17253E 0%, transparent 60%),
       radial-gradient(120% 80% at 50% 100%, #17253E 0%, transparent 60%),
       var(--ink);
     color:var(--bone);
     font-family:"Zen Kaku Gothic New", system-ui, sans-serif;
-    min-height:100vh;
+    /* 100vh はアドレスバーぶんを含むので、実際に見えている高さで測る */
+    min-height:100svh;
     display:flex;
     justify-content:center;
-    padding:12px;
+    /* ホーム画面から開くと、ノッチとホームバーの下まで描画が伸びる。
+       ここで避けておかないと上下が切れる（以前は下の padding:12px が
+       この指定を打ち消していて効いていなかった）。 */
+    padding:calc(10px + env(safe-area-inset-top)) 12px calc(12px + env(safe-area-inset-bottom));
   }
 
   .app{
@@ -65,7 +75,7 @@
     max-width:460px;
     display:flex;
     flex-direction:column;
-    gap:10px;
+    gap:var(--gap-v);
     padding-bottom:var(--sheet-pad, 0px);
   }
 
@@ -105,7 +115,7 @@
   .board{
     background:var(--panel);
     border-radius:var(--r);
-    padding:14px 14px 16px;
+    padding:var(--pad-b) 14px calc(var(--pad-b) + 2px);
     border:2px solid transparent;
     transition:border-color .25s, background .25s;
     position:relative;
@@ -120,7 +130,7 @@
     display:flex;
     align-items:center;
     gap:8px;
-    margin-bottom:12px;
+    margin-bottom:var(--gap-v);
   }
   .pip{
     width:10px; height:10px; border-radius:50%;
@@ -162,11 +172,11 @@
     background:#0F1A2C;
     border:2px solid #22314E;
     border-radius:12px;
-    padding:10px 6px 8px;
+    padding:var(--gap-v) 6px calc(var(--gap-v) - 2px);
     display:flex;
     flex-direction:column;
     align-items:center;
-    gap:8px;
+    gap:var(--gap-v);
     cursor:pointer;
     position:relative;
     transition:transform .18s cubic-bezier(.34,1.56,.64,1), border-color .18s, box-shadow .18s;

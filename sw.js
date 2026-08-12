@@ -9,7 +9,7 @@
 
    Supabase への通信は絶対に触らない。対戦は常に生の通信でやる。 */
 
-const VERSION = "finst-v1";
+const VERSION = "finst-v2";
 const SHELL = [
   "./",
   "./index.html",
