@@ -2131,7 +2131,7 @@ function restart(){
 }
 
 function reset(){
-  ratedRoom = false; ratingResult = null;
+  ratedRoom = false; ratingResult = null; ratingSentFor = null;
   /* CPUかどうかは呼んだ側が決める（startCPU が後から立てる）。
      ここで引き継ぐと、CPU戦から1台版へ移ったときにCPUのまま残る。 */
   S = Object.assign(newState(), {sel:null, pick:null, step:null});
@@ -4241,32 +4241,35 @@ function finish(winner, why){
   showWin();
   say(S.msg);
   commit();
-  reportRating(winner);
 }
 
-/* 野良マッチの結果を送ってレートを動かす。
-   送るのは「自分が勝ったか」だけで、点数はサーバー側が決める。
-   両者が送ってくるが、1部屋につき1回しか記録されない。 */
-async function reportRating(winner){
+/* 野良マッチの結果を集計してもらう。
+   こちらから言えるのは「この部屋を集計してくれ」だけ。
+   勝ったのが誰かはサーバー側が盤面を読んで決めるので、
+   負けた側が「勝った」と送ることはできない。
+   両者が呼ぶが、1部屋につき1回しか記録されない。 */
+let ratingSentFor = null;
+async function reportRating(){
   if(!online || !ratedRoom || !sb || !room) return;
+  if(ratingSentFor === room) return;              // 同じ部屋で二度頼まない
+  ratingSentFor = room;
   try{
-    const { data, error } = await sb.rpc("report_result",
-      { p_room: room, p_me: myId, p_won: winner === seat });
-    if(error) return;
+    const { data, error } = await sb.rpc("report_result", { p_room: room, p_me: myId });
+    if(error){ ratingSentFor = null; return; }
     const row = Array.isArray(data) ? data[0] : data;
     if(!row) return;
     /* 戻り値が new_rating なのは、SQL側で列名と衝突させないため（rating.sql の注記） */
     ratingResult = { rating: row.new_rating, delta: row.delta,
                      opp_rating: row.opp_rating, games: row.new_games };
+    const won = !!row.i_won;
     if(myRate){ myRate.rating = ratingResult.rating; myRate.games = ratingResult.games;
-                if(winner === seat) myRate.wins = (myRate.wins || 0) + 1;
+                if(won) myRate.wins = (myRate.wins || 0) + 1;
                 else myRate.losses = (myRate.losses || 0) + 1;
                 myRate.best = Math.max(myRate.best || 0, ratingResult.rating); }
     else myRate = { rating: ratingResult.rating, games: ratingResult.games,
-                    wins: winner === seat ? 1 : 0, losses: winner === seat ? 0 : 1,
-                    best: ratingResult.rating };
+                    wins: won ? 1 : 0, losses: won ? 0 : 1, best: ratingResult.rating };
     showRatingDelta();
-  }catch(e){}
+  }catch(e){ ratingSentFor = null; }
 }
 
 /* 勝敗画面に「1216 → 1232（+16）」を出す */
@@ -4334,6 +4337,7 @@ function showWin(){
   document.getElementById("winAgain").textContent = online ? "もう一戦" : "最初から";
   document.getElementById("win").classList.add("open");
   if(!online || w === seat) SFX.win(); else SFX.lose();
+  reportRating();
 }
 
 boot();

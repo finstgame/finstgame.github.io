@@ -4,10 +4,12 @@
 --
 -- 方針:
 --   レートの計算はぜんぶこの中（サーバー側）でやる。クライアントは
---   「この部屋で自分が勝った／負けた」としか言えず、点数そのものは書けない。
+--   「この部屋を集計してくれ」としか言えない。勝者は関数が matches.state を
+--   読んで決めるので、負けた側が「勝った」と送っても通らない。
 --   1部屋につき1回しか記録しないので、同じ試合を何度報告しても増えない。
---   ただし静的サイトなので審判は居ない。嘘の勝敗報告はまだ防げていない
---   （対策する時は、勝敗判定を Edge Functions に移して書き込みを service_role に限る）。
+--   残る穴は、共有している盤面そのものを書き換えられること。
+--   そこまで塞ぐには、手の正しさを検証する審判を Edge Functions に置いて
+--   matches への書き込みを service_role だけに限る必要がある。
 --   レートが付くのは野良マッチだけ。友達との部屋は付かないので、
 --   身内で回して盛ることはできない。
 
@@ -72,17 +74,29 @@ end $$;
 grant execute on function get_or_create_player(uuid) to anon;
 
 -- ---- 試合結果を記録してレートを動かす -------------------------------------
--- 呼ぶのは「自分が勝ったか」だけ。相手が誰かは部屋から引くので詐称できない。
+-- クライアントは「この部屋を集計してくれ」としか言えない。
+-- 勝ったのが誰かは、この関数が matches.state（両者が共有している盤面）を
+-- 読んで決める。自己申告は受け取らないので、負けた側が「勝った」と
+-- 送っても通らない。
+--
+-- さらに、盤面が本当に決着した形かを確かめる:
+--   ・over が立っていて winner が 0/1 のどちらかであること
+--   ・負けた側の手が両方0であること（投了で終わった場合を除く）
+--
 -- K値は試合数と実力で変える。始めたばかりの人は大きく動いて早く実力の位置に着き、
 -- 上の方は動きにくくして安定させる（Eloの標準的なやり方）。
+--
 -- 戻り値の名前に注意。plpgsql では OUT の名前と列名が同じだと
 -- update players set rating = rating + ... がどちらを指すのか決まらず実行時に落ちる。
 -- だから new_rating / new_games という名前にしてある。
-create or replace function report_result(p_room text, p_me uuid, p_won boolean)
-returns table(new_rating int, delta int, opp_rating int, new_games int)
+drop function if exists report_result(text, uuid, boolean);
+
+create or replace function report_result(p_room text, p_me uuid)
+returns table(new_rating int, delta int, opp_rating int, new_games int, i_won boolean)
 language plpgsql security definer as $$
 declare
   v_host uuid; v_guest uuid; v_random boolean;
+  v_state jsonb; v_seat int; v_lh jsonb; v_resign boolean;
   v_win uuid; v_lose uuid;
   v_wr int; v_lr int; v_wg int; v_lg int;
   v_kw int; v_kl int;
@@ -113,16 +127,36 @@ begin
              (select q.rating from players q
                where q.id = case when v_existing.winner_id = p_me
                                  then v_existing.loser_id else v_existing.winner_id end),
-             p.games
+             p.games,
+             (v_existing.winner_id = p_me)
         from players p where p.id = p_me;
     return;
   end if;
 
-  if p_won then
-    v_win := p_me;  v_lose := case when p_me = v_host then v_guest else v_host end;
-  else
-    v_lose := p_me; v_win  := case when p_me = v_host then v_guest else v_host end;
+  -- ---- ここが審判。盤面から勝者を決める（自己申告は使わない）----
+  select m.state into v_state from matches m where m.room_code = p_room;
+  if v_state is null then
+    raise exception '対戦データがありません';
   end if;
+  if not coalesce((v_state->>'over')::boolean, false) then
+    raise exception 'まだ決着していません';
+  end if;
+
+  v_seat := nullif(v_state->>'winner', '')::int;
+  if v_seat is null or v_seat not in (0, 1) then
+    raise exception '勝者が記録されていません';
+  end if;
+
+  -- 負けた側の手が本当に両方落ちているか（投了で終わった試合は除く）
+  v_lh     := v_state->'hands'->(1 - v_seat);
+  v_resign := coalesce(v_state->>'why', '') like '%投了%';
+  if not v_resign and not (coalesce((v_lh->>0)::int, 1) = 0
+                       and coalesce((v_lh->>1)::int, 1) = 0) then
+    raise exception '負けた側の手がまだ残っています';
+  end if;
+
+  v_win  := case when v_seat = 0 then v_host  else v_guest end;
+  v_lose := case when v_seat = 0 then v_guest else v_host  end;
 
   insert into players (id) values (v_win)  on conflict (id) do nothing;
   insert into players (id) values (v_lose) on conflict (id) do nothing;
@@ -163,11 +197,12 @@ begin
     select p.rating,
            case when v_win = p_me then v_wd else v_ld end,
            (select q.rating from players q where q.id = case when v_win = p_me then v_lose else v_win end),
-           p.games
+           p.games,
+           (v_win = p_me)
       from players p where p.id = p_me;
 end $$;
 
-grant execute on function report_result(text, uuid, boolean) to anon;
+grant execute on function report_result(text, uuid) to anon;
 
 -- ---- レートの近い人と当てる野良マッチ -------------------------------------
 -- 引数が増えたので、古い4引数版は落としてから作り直す（呼び分けが曖昧になるため）
