@@ -7,6 +7,12 @@
 <link rel="icon" href="assets/favicon-32.png" sizes="32x32">
 <link rel="icon" href="assets/icon-192.png" sizes="192x192">
 <link rel="apple-touch-icon" href="assets/apple-touch-icon.png">
+<link rel="manifest" href="manifest.webmanifest">
+<!-- iOSはmanifestのdisplayを見ないので、ホーム画面から全画面で開くにはこの2行が要る -->
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+<meta name="apple-mobile-web-app-title" content="フィンスト">
+<meta name="mobile-web-app-capable" content="yes">
 <link rel="canonical" href="https://finstgame.github.io/">
 
 <!-- LINE などに貼ったときのプレビュー -->
@@ -226,6 +232,24 @@
     color:var(--c);
   }
   .hand[data-out="true"] .count{color:#3B4A69; font-size:14px; padding:4px 0;}
+  /* ---- 新しい版のお知らせ ---- */
+  .upd-bar{
+    position:fixed; left:50%; transform:translateX(-50%);
+    bottom:calc(12px + env(safe-area-inset-bottom));
+    z-index:60; display:flex; align-items:center; gap:8px;
+    background:rgba(13,21,34,.96); border:1px solid rgba(255,255,255,.14);
+    border-radius:999px; padding:8px 10px 8px 16px;
+    box-shadow:0 8px 30px rgba(0,0,0,.5);
+    font-size:13px; max-width:calc(100vw - 24px);
+  }
+  /* ロビー用のボタン色はこの帯には効かないので、ここで完結させる */
+  .upd-bar button{
+    font-size:12px; font-weight:800; padding:7px 14px; border-radius:999px;
+    white-space:nowrap; border:0; cursor:pointer;
+  }
+  .upd-bar .primary{background:var(--wood); color:#0D1522;}
+  .upd-bar .ghost{background:transparent; color:rgba(255,255,255,.72); border:1px solid rgba(255,255,255,.22);}
+
   /* ---- レート表示 ---- */
   .rate-card{
     display:flex; align-items:center; justify-content:space-between; gap:10px;
@@ -1150,7 +1174,8 @@
   <button class="ghost" onclick="toLobby()">ロビーに戻る</button>
 </div>
 
-<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2.58.0/dist/umd/supabase.min.js"></script>
+<!-- 以前はCDNから読んでいた。電波が悪いとここで止まって起動しないので同梱に変えた -->
+<script src="assets/supabase.min.js"></script>
 <script>
 /* =========================================================
    フィンスト Phase 2（2a 〜 2d）
@@ -1895,12 +1920,17 @@ function showLobby(mode){
     <h3>ひとりで遊ぶ</h3>
     <button class="ghost" style="width:100%" onclick="startCPU()">CPUと対戦</button>
 
+    <button class="ghost" style="width:100%" id="installBtn" hidden onclick="installApp()">ホーム画面に追加する</button>
+
     <h3>ひとつの端末で2人で遊ぶ</h3>
     <button class="ghost" style="width:100%" onclick="startOffline()">1台を回して対戦</button>
     <div class="lobby-note">オンラインは、相手の手札が見えません。1台版は交代で回して遊ぶ用です。</div>`;
   const inp = document.getElementById("codeInput");
   inp.addEventListener("keydown", e => { if(e.key === "Enter") joinRoom(inp.value); });
   refreshQueueSize();
+  /* ホーム画面から起動していないときだけ、追加の導線を出す */
+  const ib = document.getElementById("installBtn");
+  if(ib && !standalone() && (installPrompt || /iPhone|iPad|iPod/.test(navigator.userAgent))) ib.hidden = false;
   /* レートは後から届くので、届いたら差し替える */
   loadMe().then(() => {
     const box = document.getElementById("meBox");
@@ -1939,6 +1969,7 @@ function leaveRoom(){
 
 function boot(){
   myId = clientId();
+  initPWA();
   if(!window.supabase || !NET.url || !NET.key){
     showLobby();
     lobbyError("オンライン機能を読み込めませんでした。1台版は遊べます");
@@ -1949,10 +1980,90 @@ function boot(){
   const code = (location.hash || "").replace("#","").trim().toUpperCase();
   paintSoundBtn();
   showLobby();
+  /* ホーム画面のアイコンを長押しして「CPUと対戦」から来た場合 */
+  if(new URLSearchParams(location.search).get("go") === "cpu"){ startCPU(); return; }
   if(code.length === 6){
     document.getElementById("codeInput").value = code;
     joinRoom(code);
   }
+}
+
+/* ================= ホーム画面に置いて使う（PWA）=================
+   ねらいは「アプリのように起動できること」と「電波が無くても遊べること」。
+   対戦はどのみち通信が要るので、オフラインで遊べるのはCPU戦と1台版。 */
+let swReg = null, installPrompt = null;
+
+function standalone(){
+  return window.matchMedia("(display-mode: standalone)").matches ||
+         window.navigator.standalone === true;
+}
+
+function initPWA(){
+  /* Androidなどが出す「インストールできます」の合図を掴んでおく。
+     既定の帯は出さず、ロビーのボタンから任意のタイミングで出す。 */
+  window.addEventListener("beforeinstallprompt", e => {
+    e.preventDefault();
+    installPrompt = e;
+    const b = document.getElementById("installBtn");
+    if(b) b.hidden = false;
+  });
+  window.addEventListener("appinstalled", () => {
+    installPrompt = null;
+    const b = document.getElementById("installBtn");
+    if(b) b.hidden = true;
+  });
+
+  if(!("serviceWorker" in navigator) || location.protocol === "file:") return;
+  navigator.serviceWorker.register("sw.js").then(reg => {
+    swReg = reg;
+    /* 新しい版が用意できたら知らせる。黙って入れ替えると、
+       対戦の途中で画面が作り直されることになる。 */
+    reg.addEventListener("updatefound", () => {
+      const sw = reg.installing;
+      if(!sw) return;
+      sw.addEventListener("statechange", () => {
+        if(sw.state === "installed" && navigator.serviceWorker.controller) showUpdateBar();
+      });
+    });
+  }).catch(() => {});
+
+  /* 交代が済んだら一度だけ読み直す */
+  let reloading = false;
+  navigator.serviceWorker.addEventListener("controllerchange", () => {
+    if(reloading) return;
+    reloading = true;
+    location.reload();
+  });
+}
+
+function showUpdateBar(){
+  if(document.getElementById("updBar")) return;
+  const bar = document.createElement("div");
+  bar.id = "updBar";
+  bar.className = "upd-bar";
+  bar.innerHTML = `<span>新しい版があります</span>
+    <button class="primary" id="updNow">更新する</button>
+    <button class="ghost" id="updLater">あとで</button>`;
+  document.body.appendChild(bar);
+  document.getElementById("updNow").onclick = () => {
+    /* 対戦の途中なら、取り違えないように一言置いてから */
+    if(swReg && swReg.waiting) swReg.waiting.postMessage("skip-waiting");
+    else location.reload();
+  };
+  document.getElementById("updLater").onclick = () => bar.remove();
+}
+
+async function installApp(){
+  if(!installPrompt){
+    /* iOSは自動の導線が無いので、やり方を出す */
+    alert("Safariの共有ボタン（□に↑）から「ホーム画面に追加」を選ぶと、アプリのように使えます。");
+    return;
+  }
+  installPrompt.prompt();
+  try{ await installPrompt.userChoice; }catch(e){}
+  installPrompt = null;
+  const b = document.getElementById("installBtn");
+  if(b) b.hidden = true;
 }
 
 /* ================= 遊び方とカード一覧 ================= */

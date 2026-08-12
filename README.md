@@ -7,6 +7,9 @@
 部屋を作って6文字のコードを相手に送るか、リンクを開いてもらえば始まります。
 インストール不要。1台を回して遊ぶモードもあります。
 
+ホーム画面に追加すると、アドレスバーの無い全画面で起動します（PWA）。
+電波が無くてもCPU戦と1台版は遊べます。
+
 ## ルール
 
 - おたがい 左手1本 / 右手1本 ではじまる
@@ -30,6 +33,8 @@
 | --- | --- |
 | `index.html` | 本体（フレームワークなしの素のHTML/CSS/JS） |
 | `finst-phase1.html` | カードなしの初期版 |
+| `manifest.webmanifest` | ホーム画面に置くための定義 |
+| `sw.js` | オフライン用のサービスワーカー |
 | `supabase/schema.sql` | オンライン対戦用のテーブル・RLS・Realtime設定 |
 | `supabase/matchmaking.sql` | 野良マッチ（待ち行列） |
 | `supabase/rating.sql` | レートとランク分け。`schema` → `matchmaking` → `rating` の順に実行する |
