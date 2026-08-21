@@ -450,6 +450,10 @@
     transform:rotate(20deg) skewX(-20deg);
   }
   /* 透視で覗いた相手の札。触れないが中身は見える */
+  /* いまのモードでは配られないカード */
+  .crow[data-off="true"]{opacity:.32;}
+  .crow[data-off="true"] .nm::after{content:"（範囲外）"; font-size:10px; opacity:.8; font-weight:400;}
+
   .card.seen{
     cursor:default;
     border-color:#8FD0FF;
@@ -1256,7 +1260,7 @@ const NET = {
 /* 紛らわしい文字（I L O 0 1）を除いた6文字 */
 const CODE_ALPHABET = "ABCDEFGHJKMNPQRSTUVWXYZ23456789";
 /* 同期する項目。sel / pick / step は各自の手元の操作なので送らない */
-const SYNC = ["hands","max","outAt","expanded","shrunk","seen","poison","combo","snaps","comboHold","mode","cards","used","turn","phase","pending","over","winner","why","msg","hit","play","hist","seal","seq"];
+const SYNC = ["hands","max","outAt","expanded","shrunk","seen","poison","combo","snaps","comboHold","mode","deck","cards","used","turn","phase","pending","over","winner","why","msg","hit","play","hist","seal","seq"];
 
 /* アウトの条件。部屋を作った側が決め、相手はそれを受け取る。
    quick … その数以上でアウト（手が落ちやすく、決着が早い）
@@ -1265,12 +1269,34 @@ const MODES = {
   quick: { name:"クイック", rule:"以上でアウト" },
   deep:  { name:"ディープ", rule:"ちょうどでアウト" }
 };
+/* 特殊技の種類をしぼる。はじめての人に18種は多すぎるので、
+   まず「何が起きたか目で追える」6種から入れるようにした。
+   easy … 効果が1行で言い切れて、他のカードと絡まないものだけ
+   hard … もとの12種。読み合いが始まる
+   tech … 全部。継続ダメージや情報戦まで入る */
+const DECKS = {
+  easy: { name:"イージー", note:"わかりやすい6種",   ids:[1,2,3,4,6,9] },
+  hard: { name:"ハード",   note:"読み合いの12種",     ids:[1,2,3,4,5,6,7,8,9,10,11,12] },
+  tech: { name:"テクニカル", note:"全種類",           ids:null }   // null＝全部
+};
+const deckIds = k => DECKS[k] && DECKS[k].ids ? DECKS[k].ids : Object.keys(CARDS).map(Number);
+let deckMode = "hard";
+try{ if(DECKS[localStorage.getItem("finst_deck")]) deckMode = localStorage.getItem("finst_deck"); }catch(e){}
+
 let ruleMode = "quick";
 try{ if(MODES[localStorage.getItem("finst_mode")]) ruleMode = localStorage.getItem("finst_mode"); }catch(e){}
 function setMode(m){
   if(!MODES[m]) return;
   ruleMode = m;
   try{ localStorage.setItem("finst_mode", m); }catch(e){}
+  SFX.tap();
+  showLobby();
+}
+
+function setDeck(d){
+  if(!DECKS[d]) return;
+  deckMode = d;
+  try{ localStorage.setItem("finst_deck", d); }catch(e){}
   SFX.tap();
   showLobby();
 }
@@ -1308,6 +1334,7 @@ function newState(){
     hands: [[1,1],[1,1]],
     max:   [[4,4],[4,4]],                // 手ごとの上限。拡張した手だけ 5
     mode:  ruleMode,                     // quick | deep
+    deck:  deckMode,                     // easy | hard | tech（配る特殊技の範囲）
     outAt: [[5,5],[5,5]],                // 手ごとのアウトの基準。拡張した手だけ 6
     expanded: [[false,false],[false,false]],  // 拡張したのはどの手か
     shrunk:   [[false,false],[false,false]],  // 縮小されたのはどの手か
@@ -1315,7 +1342,7 @@ function newState(){
     poison: [],           // {p,h,left} ターン終了ごとに1ダメージ
     combo:  null,         // {p,left} コンビで、あと何枚使えるか
     snaps:  [[],[]],      // 各自が自分の番を終えた時点の指。巻き戻し用
-    cards: [deal(), deal()],
+    cards: [deal(deckMode), deal(deckMode)],
     used:  [[],[]],
     turn: Math.random() < 0.5 ? 0 : 1,   // 先攻はランダム
     phase: "normal",                     // normal | defense | resolving | finished
@@ -1727,7 +1754,8 @@ function queued(){ return !!queueCode; }
    関数が無ければ古い4引数版に落とす。 */
 let matchRpcLegacy = false;
 async function callMatch(){
-  const base = { p_me: myId, p_mode: ruleMode, p_code: newCode(), p_state: newState() };
+  /* 部屋の mode 欄に2つの設定を入れて、同じ遊び方の人だけが当たるようにする */
+  const base = { p_me: myId, p_mode: ruleMode + ":" + deckMode, p_code: newCode(), p_state: newState() };
   if(!matchRpcLegacy){
     const res = await sb.rpc("match_random", Object.assign({
       p_rating: (myRate && myRate.rating) || 1200, p_band: queueBand }, base));
@@ -1889,7 +1917,7 @@ async function cancelQueue(){
 async function refreshQueueSize(){
   const el = document.getElementById("queueSize");
   if(!el || !sb) return;
-  const { data, error } = await sb.rpc("queue_size", { p_mode: ruleMode });
+  const { data, error } = await sb.rpc("queue_size", { p_mode: ruleMode + ":" + deckMode });
   if(error){ el.textContent = ""; return; }
   el.textContent = data > 0 ? `いま ${data}人 待っています` : "いま待っている人はいません（CPU戦をしながら待てます）";
 }
@@ -1940,6 +1968,19 @@ function showLobby(mode){
     <div class="lobby-note">${ruleMode === "deep"
       ? "5ちょうどでアウト。超えたぶんは5で割った余りに繰り下がるので、手が粘って試合が長くなります（3本の手に4ダメージ → 7 → 2本）。"
       : "5以上になった手はそのままアウト。決着が早くつきます。"}</div>
+
+    <h3>特殊技の種類</h3>
+    <div class="seg">
+      ${Object.keys(DECKS).map(k => `
+        <button class="seg-btn" data-on="${deckMode === k}" onclick="setDeck('${k}')">
+          <span class="sname">${DECKS[k].name}</span>
+          <small>${deckIds(k).length}種</small>
+        </button>`).join("")}
+    </div>
+    <div class="lobby-note">${
+      deckMode === "easy" ? "効果が一目でわかる6種だけ。はじめてならここから。" :
+      deckMode === "hard" ? "12種。拡張・カウンター・封印が入り、読み合いが増えます。" :
+      "全種類。継続ダメージや手札を覗く技まで入ります。"} この${deckIds(deckMode).length}種から3枚が配られます。</div>
 
     <h3>だれかと対戦する</h3>
     <div id="meBox">${meHTML()}</div>
@@ -2136,7 +2177,7 @@ function openInfo(){
 
     <h4>能力カード</h4>
     <ul>
-      <li>18種から3枚。<b>各1回きり</b>で補充なし</li>
+      <li>モードで決めた範囲から3枚。<b>各1回きり</b>で補充なし</li>
       <li><b>相手の手札は見えない</b>（枚数だけ分かる）</li>
       <li>「防御割り込み」は<b>相手に攻撃されたとき</b>に使う。15秒で自動パス</li>
       <li><b>拡張</b>は<b>選んだ片手だけ</b>、5でアウトが6でアウトになる。その手は5本まで持てる</li>
@@ -2170,14 +2211,19 @@ function openCards(){
   const v = viewerIdx();
   const inHand = v === null ? [] : (S.cards[v] || []);
   const used   = v === null ? [] : (S.used[v]  || []);
+  /* 対戦中はその試合の設定、ロビーではこれから遊ぶ設定を見せる */
+  const curDeck = (S && S.deck && v !== null) ? S.deck : deckMode;
+  const pool = deckIds(curDeck);
   document.getElementById("cardsBody").innerHTML = `
     ${v !== null ? `<p class="cards-lead">白く光っているのが<b>いまの手札</b>です。</p>` : ""}
+    <p class="cards-lead">いまは<b>${DECKS[curDeck] ? DECKS[curDeck].name : ""}</b>（${pool.length}種）。範囲の外は灰色で出しています。</p>
     <div class="clist">
       ${Object.keys(CARDS).map(Number).map(id => {
         const c = CARDS[id];
         const mine = inHand.includes(id);
         const spent = used.includes(id);
-        return `<div class="crow" data-timing="${c.timing}" data-mine="${mine}" data-spent="${spent}">
+        const off = !pool.includes(id);
+        return `<div class="crow" data-timing="${c.timing}" data-mine="${mine}" data-spent="${spent}" data-off="${off}">
           <div class="n">${String(id).padStart(2,"0")}</div>
           <div>
             <div class="crow-head"><span class="nm">${c.name}</span>
@@ -2190,7 +2236,7 @@ function openCards(){
         </div>`;
       }).join("")}
     </div>
-    <p class="cards-note">18種から3枚が配られます。各1回きりで補充なし。
+    <p class="cards-note">この${pool.length}種から3枚が配られます。各1回きりで補充なし。
        「防御割り込み」は相手に攻撃されたときに使い、15秒で自動パスになります。</p>`;
   const el = document.getElementById("cards");
   el.classList.add("open");
@@ -2294,9 +2340,10 @@ function reset(){
   say(openingMsg());
 }
 
-/* 18種からランダムに3枚。プレイヤーごとに独立して引くので両者が同じカードを持ちうる */
-function deal(){
-  const pool = Object.keys(CARDS).map(Number);
+/* モードで決めた範囲からランダムに3枚。
+   プレイヤーごとに独立して引くので両者が同じカードを持ちうる */
+function deal(mode){
+  const pool = deckIds(mode || deckMode).slice();
   for(let i = pool.length - 1; i > 0; i--){
     const j = Math.floor(Math.random() * (i + 1));
     [pool[i], pool[j]] = [pool[j], pool[i]];
