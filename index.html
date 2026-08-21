@@ -449,6 +449,14 @@
     border-right:2px solid color-mix(in srgb, var(--wood) 55%, transparent);
     transform:rotate(20deg) skewX(-20deg);
   }
+  /* 透視で覗いた相手の札。触れないが中身は見える */
+  .card.seen{
+    cursor:default;
+    border-color:#8FD0FF;
+    box-shadow:0 0 0 1px rgba(143,208,255,.35), 0 0 14px rgba(143,208,255,.18);
+  }
+  .card.seen .ctiming{color:#8FD0FF;}
+
   .back-count{
     align-self:center;
     font-size:11px;
@@ -1224,6 +1232,12 @@ const CARDS = {
   10: {name:"コピー",   timing:"self",    text:"自分の両手を相手と同じ本数にする。カードはコピーしない"},
   11: {name:"縮小",     timing:"self",    text:"相手の手を1つ選ぶ。その手の上限が1つ減る（5→4、6→5）。上限を超えていた指はあふれて落ちる。ただしその手が一度アウトになると解ける"},
   12: {name:"封印",     timing:"self",    text:"相手は次の自分の番、カードを使えない"},
+  13: {name:"透視",     timing:"self",    text:"相手の手札を1枚、ランダムに覗く。見た札はこの試合ずっと表向きのまま"},
+  14: {name:"略奪",     timing:"self",    text:"相手の手札を1枚ランダムに奪って自分の手札にする"},
+  15: {name:"ポイズン", timing:"attack",  text:"このカード自体が攻撃を実行する。刺さった手は、以後2回のターン終了時に1ダメージずつ受ける"},
+  16: {name:"コンビ",   timing:"self",    text:"この番のうちに、防御割り込み以外の特殊技をもう2枚使える"},
+  17: {name:"鉄壁",     timing:"defense", text:"3以上のダメージを0にする。2以下の攻撃には使えない"},
+  18: {name:"巻き戻し", timing:"self",    text:"自分の指を、前の自分の番を終えた時点の本数に戻す"},
 };
 const TIMING_LABEL = {self:"自ターン", attack:"攻撃", defense:"防御割り込み"};
 
@@ -1242,7 +1256,7 @@ const NET = {
 /* 紛らわしい文字（I L O 0 1）を除いた6文字 */
 const CODE_ALPHABET = "ABCDEFGHJKMNPQRSTUVWXYZ23456789";
 /* 同期する項目。sel / pick / step は各自の手元の操作なので送らない */
-const SYNC = ["hands","max","outAt","expanded","shrunk","mode","cards","used","turn","phase","pending","over","winner","why","msg","hit","play","hist","seal","seq"];
+const SYNC = ["hands","max","outAt","expanded","shrunk","seen","poison","combo","snaps","comboHold","mode","cards","used","turn","phase","pending","over","winner","why","msg","hit","play","hist","seal","seq"];
 
 /* アウトの条件。部屋を作った側が決め、相手はそれを受け取る。
    quick … その数以上でアウト（手が落ちやすく、決着が早い）
@@ -1297,6 +1311,10 @@ function newState(){
     outAt: [[5,5],[5,5]],                // 手ごとのアウトの基準。拡張した手だけ 6
     expanded: [[false,false],[false,false]],  // 拡張したのはどの手か
     shrunk:   [[false,false],[false,false]],  // 縮小されたのはどの手か
+    seen:   [[],[]],      // 透視で見た相手の札（見た側の番号で持つ）
+    poison: [],           // {p,h,left} ターン終了ごとに1ダメージ
+    combo:  null,         // {p,left} コンビで、あと何枚使えるか
+    snaps:  [[],[]],      // 各自が自分の番を終えた時点の指。巻き戻し用
     cards: [deal(), deal()],
     used:  [[],[]],
     turn: Math.random() < 0.5 ? 0 : 1,   // 先攻はランダム
@@ -2118,7 +2136,7 @@ function openInfo(){
 
     <h4>能力カード</h4>
     <ul>
-      <li>10種から3枚。<b>各1回きり</b>で補充なし</li>
+      <li>18種から3枚。<b>各1回きり</b>で補充なし</li>
       <li><b>相手の手札は見えない</b>（枚数だけ分かる）</li>
       <li>「防御割り込み」は<b>相手に攻撃されたとき</b>に使う。15秒で自動パス</li>
       <li><b>拡張</b>は<b>選んだ片手だけ</b>、5でアウトが6でアウトになる。その手は5本まで持てる</li>
@@ -2172,7 +2190,7 @@ function openCards(){
         </div>`;
       }).join("")}
     </div>
-    <p class="cards-note">10種から3枚が配られます。各1回きりで補充なし。
+    <p class="cards-note">18種から3枚が配られます。各1回きりで補充なし。
        「防御割り込み」は相手に攻撃されたときに使い、15秒で自動パスになります。</p>`;
   const el = document.getElementById("cards");
   el.classList.add("open");
@@ -2276,7 +2294,7 @@ function reset(){
   say(openingMsg());
 }
 
-/* 10種からランダムに3枚。プレイヤーごとに独立して引くので両者が同じカードを持ちうる */
+/* 18種からランダムに3枚。プレイヤーごとに独立して引くので両者が同じカードを持ちうる */
 function deal(){
   const pool = Object.keys(CARDS).map(Number);
   for(let i = pool.length - 1; i > 0; i--){
@@ -2806,7 +2824,22 @@ const SFX = (() => {
               hiss(t, .3, .06, 4000, 700, .35); knock(150, t+.3, .16, .2, .3); },
     12:t => { tone(N.C4, t, .5, .09, "square", .5, N.F4*0.5);                            // 封印
               chord(t+.06, [N.F4, N.G4], .5, .04, "sawtooth", .55);
-              knock(110, t+.02, .22, .22, .35); }
+              knock(110, t+.02, .22, .22, .35); },
+    13:t => { run(t, [N.C5, N.E5, N.G5, N.C6], .05, .22, .045, "sine", .6);             // 透視
+              hiss(t+.1, .25, .04, 5000, 9000, .35); },
+    14:t => { hiss(t, .18, .09, 4000, 900, .4);                                          // 略奪
+              tone(N.A5, t, .16, .06, "square", .45, N.A4);
+              knock(170, t+.14, .16, .24, .3); },
+    15:t => { tone(N.C4*1.5, t, .5, .07, "sawtooth", .35, N.C4*0.8);                     // ポイズン
+              hiss(t+.05, .45, .05, 700, 2600, .3);
+              tone(N.G4, t+.22, .35, .05, "triangle", .5, N.E4); },
+    16:t => { chord(t, [N.C5, N.E5], .18, .06, "triangle", .5);                          // コンビ
+              chord(t+.14, [N.G5, N.C6], .3, .06, "triangle", .55); },
+    17:t => { knock(90, t, .28, .3, .45);                                                // 鉄壁
+              chord(t+.02, [N.C4, N.G4], .45, .06, "square", .5);
+              hiss(t, .2, .07, 200, 1400, .35); },
+    18:t => { run(t, [N.C6, N.G5, N.E5, N.C5], .06, .3, .05, "sine", .55);               // 巻き戻し
+              tone(N.C4, t+.05, .4, .07, "triangle", .45, N.G4); }
   };
 
   const api = {
@@ -2888,6 +2921,7 @@ const modeName = () => (MODES[S.mode] || MODES.quick).name;
 const bottomP = () => online ? seat : 0;
 
 function render(){
+  if(S) handMods(S);
   document.documentElement.style.setProperty("--turn-c", col(S.turn));
   document.getElementById("cross").querySelectorAll("rect")
     .forEach(r => r.setAttribute("fill", col(S.turn)));
@@ -2996,8 +3030,18 @@ function cardsHTML(p){
                : S.cpu ? (p === 0)
                : (p === S.turn && !S.over);
   if(!faceUp){
+    /* 透視で覗いた札だけは表を見せる（見たのは自分なので、自分の画面にだけ出る） */
+    const v = viewerIdx();
+    const seen = (v !== null && S.seen && S.seen[v] && v !== p) ? S.seen[v] : [];
     return `<div class="hand-row" aria-label="${NAMES[p]}の手札 ${hand.length}枚">
-      ${hand.map(() => `<div class="card back" aria-hidden="true"></div>`).join("")}
+      ${hand.map(id => seen.includes(id)
+          ? `<div class="card seen" data-timing="${CARDS[id].timing}"
+                  aria-label="透視で見えている：${CARDS[id].name}">
+               <span class="cnum">${String(id).padStart(2,"0")}</span>
+               <span class="cname">${CARDS[id].name}</span>
+               <span class="ctiming">透視</span>
+             </div>`
+          : `<div class="card back" aria-hidden="true"></div>`).join("")}
       <span class="back-count">手札 ${hand.length}</span>
     </div>`;
   }
@@ -3027,6 +3071,19 @@ function usable(id, p){
   if(id === 4 && !S.hands[p].includes(0)) return {ok:false, why:"0の手が無い"};
   if(id === 3 && ![0,1].some(h => S.hands[p][h] > 0 && S.hands[p][h] < S.max[p][h]))
     return {ok:false, why:"増やせる手が無い"};
+  if(id === 13){
+    const seen = (S.seen && S.seen[p]) || [];
+    if(!S.cards[foe(p)].some(x => !seen.includes(x))) return {ok:false, why:"見ていない札が無い"};
+  }
+  if(id === 14 && !S.cards[foe(p)].length) return {ok:false, why:"奪う札が無い"};
+  if(id === 15 && (![0,1].some(h => S.hands[p][h] > 0) || ![0,1].some(h => S.hands[foe(p)][h] > 0)))
+    return {ok:false, why:"攻撃できない"};
+  if(id === 16){
+    if(S.combo) return {ok:false, why:"すでにコンビ中"};
+    if(!S.cards[p].some(x => x !== 16 && CARDS[x].timing !== "defense"))
+      return {ok:false, why:"重ねる札が無い"};
+  }
+  if(id === 18 && !lastSnap(p)) return {ok:false, why:"戻る先が無い"};
   return {ok:true, why:""};
 }
 
@@ -3149,13 +3206,16 @@ function attackDesc(p){
 function renderSheetBody(){
   const p = S.pending, r = p.responder;
   const defs = S.cards[r].filter(id => CARDS[id].timing === "defense");
+  /* 鉄壁は3以上の攻撃にしか効かない。押せてしまうと札を捨てるだけになる */
+  const defOk = id => id !== 17 || p.damage >= 3;
   document.getElementById("sheetBody").innerHTML = `
     <div class="hand-row">
       ${defs.map((id,i) => `<button class="card" data-def="${id}" data-timing="defense" style="--i:${i}"
-          aria-label="${CARDS[id].name}：${CARDS[id].text}">
+          ${defOk(id) ? "" : "disabled"}
+          aria-label="${CARDS[id].name}：${CARDS[id].text}${defOk(id) ? "" : "（この攻撃には使えません）"}">
           <span class="cnum">${String(id).padStart(2,"0")}</span>
           <span class="cname">${CARDS[id].name}</span>
-          <span class="ctiming">使う</span>
+          <span class="ctiming">${defOk(id) ? "使う" : "2以下は不可"}</span>
         </button>`).join("")}
       <button class="card" data-def="pass" style="--i:${defs.length}" aria-label="何もせず受ける">
         <span class="cnum">—</span><span class="cname">受ける</span><span class="ctiming">パス</span>
@@ -3225,6 +3285,17 @@ function respond(id){
     return;
   }
 
+  if(id === 17){                                 // 鉄壁：3以上を0にする
+    if(p.damage < 3) return;                     // 2以下には使わせない（札の無駄になる）
+    consume(r, 17, {h: p.toHand});
+    p.damage = 0;
+    p.modifiers.push("wall");
+    p.passNote = `${NAMES[r]}の鉄壁で無効`;
+    closeSheet();
+    poof(p.to, p.toHand, "無効", "nul").then(() => resolvePending());
+    return;
+  }
+
   if(id === 9){                                  // ヒール：無効化して自分の手に足す
     consume(r, 9, {h: p.toHand});
     closeSheet();
@@ -3282,8 +3353,11 @@ async function resolvePending(){
 
   const via = p.kind === "counter" ? "カウンターで返された攻撃" :
               p.kind === "double"  ? "「ダブル」" :
-              p.kind === "twice"   ? "「倍返指」" : `${p.damage}本`;
-  const head = after === 0
+              p.kind === "twice"   ? "「倍返指」" :
+              p.kind === "poison"  ? "「ポイズン」" : `${p.damage}本`;
+  const head = p.damage === 0
+    ? `<b>${NAMES[p.to]}</b>が攻撃を防いだ。`
+    : after === 0
     ? `<b>${NAMES[p.from]}</b>の${via}が刺さり、${NAMES[p.to]}の${hn(p.toHand)}手が<b>アウト</b>。`
     : `<b>${NAMES[p.from]}</b>の${via}が入った。`;
   const calc = `<span class="sub">${before} + ${p.damage} = ${before + p.damage}`
@@ -3293,6 +3367,12 @@ async function resolvePending(){
 
   note(p.from, `${p.damage}ダメージ → ${NAMES[p.to]}の${hn(p.toHand)}手が`
     + (after === 0 ? "アウト" : `${after}本`));
+  /* ポイズンは、刺さった手に毒を残す。落ちた手には残らない */
+  if(p.kind === "poison" && after > 0){
+    /* fresh を立てておく。刺さった直後のターン終了では効かせない。
+       そうしないと2回ぶんのうち1回をその場で使い切ってしまう。 */
+    handMods(S).poison.push({ p: p.to, h: p.toHand, left: 2, fresh: true });
+  }
   dropHandModsOnOut();          // 2回目の攻撃は、解けた後の基準で計算する
   S.pending = null;
   if(checkDeath()) return;
@@ -3423,12 +3503,96 @@ function useCard(id){
       return beginStep({id:8, who:me, need:"enemyHand", data:{mine:live, hits:[]},
                 text:`<span class="sname">ダブル</span> ${hn(live[0])}手（${S.hands[me][live[0]]}本）でどの手を狙いますか？`});
     }
+    case 13: return runSee(me);
+    case 14: return runSteal(me);
+    case 15: return beginStep({id:15, who:me, need:"ownHand",
+                text:`<span class="sname">ポイズン</span> 攻撃する自分の手を選んでください`});
+    case 16: return runCombo(me);
+    case 18: return runRewind(me);
   }
+}
+
+/* ---- 13 透視：相手の札を1枚だけ覗く ----
+   見た札は seen に残す。共有している盤面に書くので、相手にも
+   「1枚見られた」ことは伝わる。隠すのは中身ではなく、どれを見たかではない。 */
+async function runSee(me){
+  const opp = foe(me);
+  const unseen = S.cards[opp].filter(id => !S.seen[me].includes(id));
+  if(!unseen.length) return;
+  busy = true;
+  const got = unseen[Math.floor(Math.random() * unseen.length)];
+  await spend(me, 13, {card: got});
+  S.seen[me].push(got);
+  render();
+  endTurn(`<b>${NAMES[me]}</b>の透視。`
+    + `<span class="sub">${NAMES[opp]}の手札から「${CARDS[got].name}」が見えた</span>`);
+}
+
+/* ---- 14 略奪：相手の札を1枚奪う ----
+   どれを取るかは選べない。相手の手札は見えないので、選ばせると
+   透視と組み合わせない限り意味のない選択になる。 */
+async function runSteal(me){
+  const opp = foe(me);
+  if(!S.cards[opp].length) return;
+  busy = true;
+  const i = Math.floor(Math.random() * S.cards[opp].length);
+  const got = S.cards[opp][i];
+  await spend(me, 14, {card: got});
+  S.cards[opp].splice(i, 1);
+  S.cards[me].push(got);
+  S.cards[me].sort((a,b) => a - b);
+  /* 奪った札は、相手が透視で見ていた記録から外す */
+  S.seen[opp] = S.seen[opp].filter(x => x !== got);
+  S.seen[me]  = S.seen[me].filter(x => x !== got);
+  render();
+  endTurn(`<b>${NAMES[me]}</b>の略奪。`
+    + `<span class="sub">${NAMES[opp]}から「${CARDS[got].name}」を奪った</span>`);
+}
+
+/* ---- 16 コンビ：この番のうちに、もう2枚使える ----
+   手札は3枚なので、コンビ＋2枚＝ちょうど使い切る形になる。 */
+async function runCombo(me){
+  busy = true;
+  await spend(me, 16, null);
+  S.combo = { p: me, left: 2 };
+  S.comboHold = true;                 // この番を渡さない
+  render();
+  endTurn(`<b>${NAMES[me]}</b>のコンビ。`);
+}
+
+/* ---- 18 巻き戻し：前の自分の番を終えた時点の指に戻す ----
+   間に受けた攻撃を無かったことにするカード。上限が下がっていたら
+   その範囲に収める（拡張が解けた後に5本へは戻れない）。 */
+async function runRewind(me){
+  const snap = lastSnap(me);
+  if(!snap) return;
+  busy = true;
+  const before = S.hands[me].join("/");
+  await spend(me, 18, null);
+  S.hands[me] = [0,1].map(h => Math.min(snap[h], S.max[me][h]));
+  render();
+  await Promise.all([0,1].map(h => poof(me, h, String(S.hands[me][h]), "heal")));
+  render();
+  if(checkDeath(me)) return;
+  endTurn(`<b>${NAMES[me]}</b>の巻き戻し。`
+    + `<span class="sub">${before} → ${S.hands[me].join("/")} に戻した</span>`);
+}
+
+/* 前の自分の番を終えた時点の指。無ければ null */
+function lastSnap(p){
+  const a = (S.snaps && S.snaps[p]) || [];
+  return a.length ? a[a.length - 1] : null;
 }
 
 function consume(p, id, detail){
   S.cards[p] = S.cards[p].filter(x => x !== id);
   S.used[p].push(id);
+  /* コンビ中に切った札を数える。防御割り込みは対象外 */
+  if(id !== 16 && CARDS[id].timing !== "defense" && S.combo && S.combo.p === p && S.combo.left > 0){
+    S.combo.left--;
+    S.comboHold = S.combo.left > 0;
+    if(S.combo.left <= 0) S.combo = null;
+  }
   note(p, `「${CARDS[id].name}」を使った`);
   S.play = { id, p, detail: detail || null, n: (S.play ? S.play.n : 0) + 1 };
   playCardFx(id, p, detail);
@@ -3511,6 +3675,26 @@ function stepGotHand(p,h){
       busy = false;
       render();
       declareAttack({from:me, fromHand:st.data.mine, to:p, toHand:h, damage:dmg, kind:"twice"});
+    });
+    return;
+  }
+
+  if(st.id === 15){                      // ポイズン：自分の手 → 相手の手。通常の攻撃＋毒
+    if(st.need === "ownHand"){
+      st.data.mine = h;
+      st.need = "enemyHand";
+      document.getElementById("stepText").innerHTML =
+        `<span class="sname">ポイズン</span> ${S.hands[p][h]}本で攻撃。どの手を狙いますか？`;
+      render();
+      return;
+    }
+    const me = st.who, dmg = S.hands[me][st.data.mine];
+    S.step = null; closeStepUI();
+    busy = true;
+    spend(me, 15, {from: st.data.mine, to: h}).then(() => {
+      busy = false;
+      render();
+      declareAttack({from:me, fromHand:st.data.mine, to:p, toHand:h, damage:dmg, kind:"poison"});
     });
     return;
   }
@@ -3968,6 +4152,26 @@ function cpuAct(){
     const th = [0,1].find(h => S.hands[opp][h] > 0 && S.max[opp][h] > 4);
     if(th !== undefined) return cpuUseShrink(th);
   }
+  /* 巻き戻し：いま自分の指が、前の番を終えた時点より悪くなっているとき */
+  if(has(18)){
+    const snap = lastSnap(me);
+    if(snap){
+      const back = [0,1].map(h => Math.min(snap[h], S.max[me][h]));
+      const now  = snapForSearch();
+      const alt  = { h:[now.h[0].slice(), back.slice()], o:now.o, mx:now.mx, mode:now.mode };
+      if(simBest(alt, 0, me, CPU_PLY) > cpuSearch().score) return cpuUseCard(18);
+    }
+  }
+  /* 略奪：相手の札を減らすのは、相手が2枚以上持っているときに効く */
+  if(has(14) && S.cards[opp].length >= 2) return cpuUseCard(14);
+  /* ポイズン：この一撃で落とせなくても、じわじわ効かせられる */
+  if(has(15)){
+    const mh = [0,1].filter(h => S.hands[me][h] > 0)
+                    .sort((a,b) => S.hands[me][b] - S.hands[me][a])[0];
+    const th = [0,1].find(h => S.hands[opp][h] > 0);
+    if(mh !== undefined && th !== undefined && cpuSearch().score < 100000)
+      return cpuUsePoison(mh, th);
+  }
   /* 相手が手札を持っていて、こちらが押されているなら封印 */
   if(has(12) && S.cards[opp].length >= 2){
     const mine = S.hands[me][0] + S.hands[me][1];
@@ -4027,6 +4231,13 @@ function cpuUseMeteor(h, add){
     cpuTimer = setTimeout(() => cpuPickNumber(add), CPU_DELAY.step);
   }, CPU_DELAY.step);
 }
+function cpuUsePoison(mh, th){
+  useCard(15);
+  cpuTimer = setTimeout(() => {
+    tap(1, mh);
+    cpuTimer = setTimeout(() => tap(0, th), CPU_DELAY.step);
+  }, CPU_DELAY.step);
+}
 function cpuUseShrink(th){
   useCard(11);
   cpuTimer = setTimeout(() => tap(0, th), CPU_DELAY.step);
@@ -4054,18 +4265,24 @@ function cpuDefend(){
   const last  = isLastHand(me, p.toHand);
   const has = id => S.cards[me].includes(id);
 
+  const wall = has(17) && p.damage >= 3;              // 鉄壁は3以上にしか効かない
+
   /* 負ける一撃なら全力で止める */
   if(fatal && last){
     if(has(7)) return respondCounter();
+    if(wall)   return respond(17);
     if(has(9)) return respondHeal();
     if(has(2) && !wouldOut(1, me, p.toHand)) return respond(2);
   }
   /* 手が1本落ちるだけでも、返せるなら返す */
   if(fatal){
     if(has(7) && p.damage >= 3) return respondCounter();
+    if(wall)   return respond(17);
     if(has(2) && !wouldOut(1, me, p.toHand)) return respond(2);
     if(has(9)) return respondHeal();
   }
+  /* 落ちはしないが痛い一撃も、鉄壁なら丸ごと消せるので使う */
+  if(wall && p.damage >= 4) return respond(17);
   passDefense();
 }
 function respondCounter(){ respond(7); }   /* 返し先は自動なので追加操作は要らない */
@@ -4099,7 +4316,13 @@ const FX = {
   9:  {c:"#6BE39A", label:"回復",     kind:"rise"},
   10: {c:"#8FD0FF", label:"写しとる", kind:"beam"},
   11: {c:"#C08CFF", label:"締めつける", kind:"ring"},
-  12: {c:"#6E7FA8", label:"カードを封じる", kind:"seal"}
+  12: {c:"#6E7FA8", label:"カードを封じる", kind:"seal"},
+  13: {c:"#8FD0FF", label:"覗く",       kind:"ring"},
+  14: {c:"#C08CFF", label:"奪う",       kind:"beam"},
+  15: {c:"#7FD36B", label:"毒",         kind:"beam"},
+  16: {c:"#FFD166", label:"二枚重ね",   kind:"ring"},
+  17: {c:"#B8C4D8", label:"鉄壁",       kind:"shield"},
+  18: {c:"#9B8CFF", label:"巻き戻す",   kind:"rise"}
 };
 
 function reduceMotion(){
@@ -4238,6 +4461,15 @@ function playCardFx(id, p, detail){
     case 11: fxRing(opp, detail && detail.h != null ? detail.h : 0, c);
              fxRise(opp, detail && detail.h != null ? detail.h : 0, c); break;
     case 12: fxSealBoard(opp, c); break;
+    case 13: fxRing(opp, 0, c); setTimeout(() => fxRing(opp, 1, c), 150); break;   // 透視
+    case 14: fxBeam(opp, 0, p, 0, c); break;                                       // 略奪
+    case 15: if(detail && detail.from != null && detail.to != null)
+               fxBeam(p, detail.from, opp, detail.to, c);
+             else fxRing(opp, 0, c);
+             break;                                                                // ポイズン
+    case 16: fxRing(p, 0, c); setTimeout(() => fxRing(p, 1, c), 150); break;        // コンビ
+    case 17: fxShield(p, detail && detail.h != null ? detail.h : 0, c); break;      // 鉄壁
+    case 18: [0,1].forEach(h => fxRise(p, h, c)); break;                            // 巻き戻し
   }
 }
 
@@ -4295,23 +4527,43 @@ function closeAllPanels(){
 
 function endTurn(msg){
   SFX.duck(false);
-  /* 封印は、封じられた人の番が終わった時点で解ける */
-  if(S.seal && S.seal[S.turn] > 0){
-    S.seal[S.turn]--;
-    if(S.seal[S.turn] === 0) msg += `<span class="sub">${NAMES[S.turn]}の封印が解けた</span>`;
+  handMods(S);
+  const actor = S.turn;
+
+  /* コンビ中は番を渡さない。同じ人がもう1枚使える */
+  const hold = !!S.comboHold && !dead(0) && !dead(1);
+  S.comboHold = false;
+
+  if(!hold){
+    /* 封印は、封じられた人の番が終わった時点で解ける */
+    if(S.seal && S.seal[S.turn] > 0){
+      S.seal[S.turn]--;
+      if(S.seal[S.turn] === 0) msg += `<span class="sub">${NAMES[S.turn]}の封印が解けた</span>`;
+    }
+    msg += tickPoison();
   }
+
   dropHandModsOnOut().forEach(l =>
     msg += `<span class="sub">${NAMES[l.p]}の${hn(l.h)}手が落ちたので、${l.kind}は解けた</span>`);
   S.doubleQueue = null;
   /* 保険：どの経路から来ても、両手アウトのプレイヤーが居るまま手番を回さない */
-  if(dead(0) || dead(1)){ S.pending = null; S.step = null; checkDeath(); return; }
+  if(dead(0) || dead(1)){ S.pending = null; S.step = null; checkDeath(actor); return; }
   S.sel = null;
   S.pick = null;
   S.step = null;
   S.pending = null;
   S.phase = "normal";
-  S.turn = foe(S.turn);
-  S.msg = msg + `<span class="sub">次は ${NAMES[S.turn]}</span>`;
+  if(hold){
+    const left = S.combo ? S.combo.left : 0;
+    S.msg = msg + `<span class="sub">コンビ：あと${left}枚、続けて使えます`
+      + `（攻撃や分配をすると番が終わります）</span>`;
+  } else {
+    /* 自分の番を終えた時点の指を控えておく。巻き戻しが戻る先はここ */
+    S.snaps[actor] = (S.snaps[actor] || []).concat([S.hands[actor].slice()]).slice(-3);
+    if(S.combo && S.combo.p === actor) S.combo = null;   // 使い切らずに番を終えたら消える
+    S.turn = foe(S.turn);
+    S.msg = msg + `<span class="sub">次は ${NAMES[S.turn]}</span>`;
+  }
   closeAllPanels();
   stopTimer(); clearTimeout(watchdog);
   render();
@@ -4321,10 +4573,38 @@ function endTurn(msg){
   cpuTick();
 }
 
+/* ポイズン：ターンの終わりに1ダメージ。攻撃と同じ扱いなので、
+   これで手が落ちることもある。落ちた手からは毒も消える。 */
+function tickPoison(){
+  const list = handMods(S).poison;
+  if(!list.length) return "";
+  let msg = "";
+  const rest = [];
+  list.forEach(t => {
+    if(t.fresh){ rest.push({ p:t.p, h:t.h, left:t.left }); return; }   // 次の終了から
+    if(S.hands[t.p][t.h] <= 0) return;                 // すでに落ちている手は対象外
+    const before = S.hands[t.p][t.h];
+    const after = norm(before + 1, t.p, t.h);
+    S.hands[t.p][t.h] = after;
+    note(t.p, `ポイズンで1ダメージ → ${hn(t.h)}手が` + (after === 0 ? "アウト" : `${after}本`));
+    msg += `<span class="sub">ポイズン：${NAMES[t.p]}の${hn(t.h)}手に1ダメージ`
+         + `（${before} → ${after === 0 ? "アウト" : after + "本"}）</span>`;
+    poof(t.p, t.h, "+1", "");
+    if(after > 0 && t.left > 1) rest.push({ p:t.p, h:t.h, left: t.left - 1 });
+  });
+  S.poison = rest;
+  return msg;
+}
+
 /* 両手ともアウトなら負け。自分のカードで自滅した場合も同じ扱い。 */
-/* 古い状態が同期されてきても落ちないように、shrunk を必ず用意する */
+/* 古い状態が同期されてきても落ちないように、後から足した項目を補う。
+   相手が古い版のままでも、こちらが落ちないことが大事。 */
 function handMods(st){
   if(!st.shrunk) st.shrunk = [[false,false],[false,false]];
+  if(!st.seen)   st.seen   = [[],[]];
+  if(!st.poison) st.poison = [];
+  if(!st.snaps)  st.snaps  = [[],[]];
+  if(st.combo === undefined) st.combo = null;
   return st;
 }
 
