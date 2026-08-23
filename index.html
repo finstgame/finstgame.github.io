@@ -250,6 +250,26 @@
     color:var(--c);
   }
   .hand[data-out="true"] .count{color:#3B4A69; font-size:14px; padding:4px 0;}
+  /* ---- 1台版の交代画面 ---- */
+  .pass{
+    position:fixed; inset:0; z-index:55; display:none;
+    background:
+      radial-gradient(120% 80% at 50% 0%, #17253E 0%, transparent 60%),
+      var(--ink);
+    padding:24px calc(24px + env(safe-area-inset-left)) calc(24px + env(safe-area-inset-bottom));
+    place-items:center; text-align:center;
+  }
+  .pass.open{display:grid;}
+  .pass-inner{display:flex; flex-direction:column; gap:14px; align-items:center; max-width:340px;}
+  .pass-lead{font-size:13px; letter-spacing:.14em; color:var(--dim);}
+  .pass-who{
+    font-family:"Dela Gothic One", sans-serif;
+    font-size:clamp(26px, 9vw, 38px);
+    color:var(--c, var(--wood));
+  }
+  .pass-note{font-size:12px; line-height:1.7; color:var(--dim);}
+  .pass .primary{width:100%; padding:14px 20px;}
+
   /* ---- 新しい版のお知らせ ---- */
   .upd-bar{
     position:fixed; left:50%; transform:translateX(-50%);
@@ -1197,6 +1217,16 @@
   </div>
 </div>
 
+<!-- 1台を回して遊ぶとき、交代のあいだ盤面を隠す -->
+<div class="pass" id="pass">
+  <div class="pass-inner">
+    <div class="pass-lead">端末を渡してください</div>
+    <div class="pass-who" id="passWho"></div>
+    <div class="pass-note" id="passNote"></div>
+    <button class="primary" id="passGo">交代しました</button>
+  </div>
+</div>
+
 <div class="win" id="win">
   <h2 id="winText"></h2>
   <div class="why" id="winWhy"></div>
@@ -1355,6 +1385,12 @@ function newState(){
     hist: [],                           // 直前の手。決着後に「何で負けたか」を出すのに使う
     play: null,                         // 直前に使われたカード。相手の端末でも演出を出すため
     seal: [0,0],                        // 封印。その人が自分の番にカードを使えない回数
+    /* この2つは「もう一戦」で Object.assign する時に消え残ると事故になる。
+       comboHold が残ると次の試合で手番が渡らず、doubleQueue が残ると
+       最初の攻撃のあとに幻の2発目が飛ぶ。だからここに必ず並べておく。 */
+    comboHold: false,
+    doubleQueue: null,
+    sel: null, pick: null, step: null,
     seq: 0
   };
 }
@@ -2049,6 +2085,7 @@ function leaveRoom(){
 function boot(){
   myId = clientId();
   initPWA();
+  document.getElementById("passGo").onclick = passDone;
   if(!window.supabase || !NET.url || !NET.key){
     showLobby();
     lobbyError("オンライン機能を読み込めませんでした。1台版は遊べます");
@@ -2065,6 +2102,33 @@ function boot(){
     document.getElementById("codeInput").value = code;
     joinRoom(code);
   }
+}
+
+/* ================= 1台を回して遊ぶときの交代 =================
+   同じ端末を回すので、次の人の手札がそのまま前の人に見えてしまう。
+   盤面をいったん覆って、交代してからめくる。
+   防御割り込みの応答でも同じことが起きるので、そちらも覆う。
+   このとき制限時間は、めくった瞬間から数え直す（覆っている間に
+   減っていくと、見る前に自動パスになってしまう）。 */
+let passAfter = null;                    // 「交代しました」を押した後にやること
+
+function needPassScreen(){
+  return !online && S && !S.cpu && !S.over;
+}
+
+function showPass(who, note, after){
+  if(!S || S.over) return;            // 決着後は覆わない（勝敗画面より手前に出てしまう）
+  passAfter = after || null;
+  document.documentElement.style.setProperty("--c", col(who));
+  document.getElementById("passWho").textContent = NAMES[who];
+  document.getElementById("passNote").innerHTML = note || "";
+  document.getElementById("pass").classList.add("open");
+}
+
+function passDone(){
+  document.getElementById("pass").classList.remove("open");
+  const f = passAfter; passAfter = null;
+  if(f) f();
 }
 
 /* ================= ホーム画面に置いて使う（PWA）=================
@@ -2327,6 +2391,9 @@ function restart(){
 
 function reset(){
   ratedRoom = false; ratingResult = null; ratingSentFor = null;
+  passAfter = null;
+  const pv = document.getElementById("pass");
+  if(pv) pv.classList.remove("open");
   /* CPUかどうかは呼んだ側が決める（startCPU が後から立てる）。
      ここで引き継ぐと、CPU戦から1台版へ移ったときにCPUのまま残る。 */
   S = Object.assign(newState(), {sel:null, pick:null, step:null});
@@ -3219,7 +3286,16 @@ function enterDefense(){
     say(S.msg + `<span class="sub">CPUが考えています…</span>`);
     startTimer();
   } else if(iRespond()){
-    openSheet();
+    /* 1台版は、攻めた人が持ったまま相手の防御札を見てしまう。
+       覆ってから開き、制限時間はめくった時点から数え直す。 */
+    if(needPassScreen() && p.responder !== S.turn){
+      stopTimer();
+      showPass(p.responder, "攻撃されています。<br>防御カードを使うか決めてください。", () => {
+        if(!S.pending || S.phase !== "defense") return;
+        S.pending.deadline = Date.now() + RESPONSE_MS;
+        openSheet();
+      });
+    } else openSheet();
   } else {
     startWatchdog();
   }
@@ -4617,6 +4693,8 @@ function endTurn(msg){
   say(S.msg);
   busy = false;
   commit();
+  /* 1台版で手番が移ったら、次の人に渡るまで盤面を隠す */
+  if(!hold && needPassScreen()) showPass(S.turn, "この人の手札が出ます。<br>前の人は見ないでください。");
   cpuTick();
 }
 
@@ -4792,6 +4870,8 @@ function showWin(){
   if(ratingResult) showRatingDelta();
   else if(online && ratedRoom) wr.innerHTML = `<div class="wr-sub">レートを計算しています…</div>`;
   document.getElementById("winRecap").innerHTML = recapHTML();
+  document.getElementById("pass").classList.remove("open");   // 決着したら覆いは外す
+  passAfter = null;
   document.getElementById("winAgain").textContent = online ? "もう一戦" : "最初から";
   document.getElementById("win").classList.add("open");
   if(!online || w === seat) SFX.win(); else SFX.lose();
