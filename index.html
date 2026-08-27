@@ -1269,7 +1269,7 @@ const CARDS = {
   13: {name:"透視",     timing:"self",    text:"相手の手札を1枚、ランダムに覗く。見た札はこの試合ずっと表向きのまま"},
   14: {name:"略奪",     timing:"self",    text:"相手の手札を1枚ランダムに奪って自分の手札にする"},
   15: {name:"ポイズン", timing:"attack",  text:"このカード自体が攻撃を実行する。刺さった手は、以後2回のターン終了時に1ダメージずつ受ける"},
-  16: {name:"コンビ",   timing:"self",    text:"この番のうちに、防御割り込み以外の特殊技をもう2枚使える"},
+  16: {name:"なまけもの", timing:"self",  text:"何もしないで自分の番を終える。動くと不利になる場面で使う"},
   17: {name:"鉄壁",     timing:"defense", text:"3以上のダメージを0にする。2以下の攻撃には使えない"},
   18: {name:"巻き戻し", timing:"self",    text:"自分の指を、前の自分の番を終えた時点の本数に戻す"},
 };
@@ -1290,7 +1290,7 @@ const NET = {
 /* 紛らわしい文字（I L O 0 1）を除いた6文字 */
 const CODE_ALPHABET = "ABCDEFGHJKMNPQRSTUVWXYZ23456789";
 /* 同期する項目。sel / pick / step は各自の手元の操作なので送らない */
-const SYNC = ["hands","max","outAt","expanded","shrunk","seen","poison","combo","snaps","comboHold","mode","deck","cards","used","turn","phase","pending","over","winner","why","msg","hit","play","hist","seal","seq"];
+const SYNC = ["hands","max","outAt","expanded","shrunk","seen","poison","snaps","mode","deck","cards","used","turn","phase","pending","over","winner","why","msg","hit","play","hist","seal","seq"];
 
 /* アウトの条件。部屋を作った側が決め、相手はそれを受け取る。
    quick … その数以上でアウト（手が落ちやすく、決着が早い）
@@ -1370,7 +1370,6 @@ function newState(){
     shrunk:   [[false,false],[false,false]],  // 縮小されたのはどの手か
     seen:   [[],[]],      // 透視で見た相手の札（見た側の番号で持つ）
     poison: [],           // {p,h,left} ターン終了ごとに1ダメージ
-    combo:  null,         // {p,left} コンビで、あと何枚使えるか
     snaps:  [[],[]],      // 各自が自分の番を終えた時点の指。巻き戻し用
     cards: [deal(deckMode), deal(deckMode)],
     used:  [[],[]],
@@ -1385,10 +1384,9 @@ function newState(){
     hist: [],                           // 直前の手。決着後に「何で負けたか」を出すのに使う
     play: null,                         // 直前に使われたカード。相手の端末でも演出を出すため
     seal: [0,0],                        // 封印。その人が自分の番にカードを使えない回数
-    /* この2つは「もう一戦」で Object.assign する時に消え残ると事故になる。
-       comboHold が残ると次の試合で手番が渡らず、doubleQueue が残ると
-       最初の攻撃のあとに幻の2発目が飛ぶ。だからここに必ず並べておく。 */
-    comboHold: false,
+    /* 「もう一戦」は Object.assign で新しい盤面を混ぜるので、ここに
+       並んでいないキーは前の試合のまま残ってしまう。状態を足したら
+       必ずここにも並べる（doubleQueue が残ると幻の2発目が飛ぶ）。 */
     doubleQueue: null,
     sel: null, pick: null, step: null,
     seq: 0
@@ -2947,8 +2945,8 @@ const SFX = (() => {
     15:t => { tone(N.C4*1.5, t, .5, .07, "sawtooth", .35, N.C4*0.8);                     // ポイズン
               hiss(t+.05, .45, .05, 700, 2600, .3);
               tone(N.G4, t+.22, .35, .05, "triangle", .5, N.E4); },
-    16:t => { chord(t, [N.C5, N.E5], .18, .06, "triangle", .5);                          // コンビ
-              chord(t+.14, [N.G5, N.C6], .3, .06, "triangle", .55); },
+    16:t => { tone(N.G4, t, .7, .07, "sine", .5, N.C4);                                  // なまけもの
+              tone(N.E4, t+.18, .8, .05, "triangle", .45, N.C4*0.75); },
     17:t => { knock(90, t, .28, .3, .45);                                                // 鉄壁
               chord(t+.02, [N.C4, N.G4], .45, .06, "square", .5);
               hiss(t, .2, .07, 200, 1400, .35); },
@@ -3192,11 +3190,6 @@ function usable(id, p){
   if(id === 14 && !S.cards[foe(p)].length) return {ok:false, why:"奪う札が無い"};
   if(id === 15 && (![0,1].some(h => S.hands[p][h] > 0) || ![0,1].some(h => S.hands[foe(p)][h] > 0)))
     return {ok:false, why:"攻撃できない"};
-  if(id === 16){
-    if(S.combo) return {ok:false, why:"すでにコンビ中"};
-    if(!S.cards[p].some(x => x !== 16 && CARDS[x].timing !== "defense"))
-      return {ok:false, why:"重ねる札が無い"};
-  }
   if(id === 18 && !lastSnap(p)) return {ok:false, why:"戻る先が無い"};
   return {ok:true, why:""};
 }
@@ -3630,7 +3623,7 @@ function useCard(id){
     case 14: return runSteal(me);
     case 15: return beginStep({id:15, who:me, need:"ownHand",
                 text:`<span class="sname">ポイズン</span> 攻撃する自分の手を選んでください`});
-    case 16: return runCombo(me);
+    case 16: return runIdle(me);
     case 18: return runRewind(me);
   }
 }
@@ -3672,15 +3665,14 @@ async function runSteal(me){
     + `<span class="sub">${NAMES[opp]}から「${CARDS[got].name}」を奪った</span>`);
 }
 
-/* ---- 16 コンビ：この番のうちに、もう2枚使える ----
-   手札は3枚なので、コンビ＋2枚＝ちょうど使い切る形になる。 */
-async function runCombo(me){
+/* ---- 16 なまけもの：何もしないで番を終える ----
+   このゲームは必ず何か動かないといけない。動けば相手に本数を渡すか、
+   自分の配分を崩すことになる。動かない権利そのものが札になっている。 */
+async function runIdle(me){
   busy = true;
   await spend(me, 16, null);
-  S.combo = { p: me, left: 2 };
-  S.comboHold = true;                 // この番を渡さない
   render();
-  endTurn(`<b>${NAMES[me]}</b>のコンビ。`);
+  endTurn(`<b>${NAMES[me]}</b>は何もしなかった。`);
 }
 
 /* ---- 18 巻き戻し：前の自分の番を終えた時点の指に戻す ----
@@ -3710,12 +3702,6 @@ function lastSnap(p){
 function consume(p, id, detail){
   S.cards[p] = S.cards[p].filter(x => x !== id);
   S.used[p].push(id);
-  /* コンビ中に切った札を数える。防御割り込みは対象外 */
-  if(id !== 16 && CARDS[id].timing !== "defense" && S.combo && S.combo.p === p && S.combo.left > 0){
-    S.combo.left--;
-    S.comboHold = S.combo.left > 0;
-    if(S.combo.left <= 0) S.combo = null;
-  }
   note(p, `「${CARDS[id].name}」を使った`);
   S.play = { id, p, detail: detail || null, n: (S.play ? S.play.n : 0) + 1 };
   playCardFx(id, p, detail);
@@ -4275,6 +4261,12 @@ function cpuAct(){
     const th = [0,1].find(h => S.hands[opp][h] > 0 && S.max[opp][h] > 4);
     if(th !== undefined) return cpuUseShrink(th);
   }
+  /* なまけもの：動くと必ず損をする場面でだけ切る。
+     盤面をそのまま相手に渡した形と、普通に動いた形を同じ深さで比べる。 */
+  if(has(16)){
+    const stay = simBest(snapForSearch(), 0, me, CPU_PLY);
+    if(stay > cpuSearch().score) return cpuUseCard(16);
+  }
   /* 巻き戻し：いま自分の指が、前の番を終えた時点より悪くなっているとき */
   if(has(18)){
     const snap = lastSnap(me);
@@ -4443,7 +4435,7 @@ const FX = {
   13: {c:"#8FD0FF", label:"覗く",       kind:"ring"},
   14: {c:"#C08CFF", label:"奪う",       kind:"beam"},
   15: {c:"#7FD36B", label:"毒",         kind:"beam"},
-  16: {c:"#FFD166", label:"二枚重ね",   kind:"ring"},
+  16: {c:"#9AA7BD", label:"なにもしない", kind:"ring"},
   17: {c:"#B8C4D8", label:"鉄壁",       kind:"shield"},
   18: {c:"#9B8CFF", label:"巻き戻す",   kind:"rise"}
 };
@@ -4590,7 +4582,7 @@ function playCardFx(id, p, detail){
                fxBeam(p, detail.from, opp, detail.to, c);
              else fxRing(opp, 0, c);
              break;                                                                // ポイズン
-    case 16: fxRing(p, 0, c); setTimeout(() => fxRing(p, 1, c), 150); break;        // コンビ
+    case 16: fxRing(p, 0, c); setTimeout(() => fxRing(p, 1, c), 260); break;        // なまけもの
     case 17: fxShield(p, detail && detail.h != null ? detail.h : 0, c); break;      // 鉄壁
     case 18: [0,1].forEach(h => fxRise(p, h, c)); break;                            // 巻き戻し
   }
@@ -4653,18 +4645,12 @@ function endTurn(msg){
   handMods(S);
   const actor = S.turn;
 
-  /* コンビ中は番を渡さない。同じ人がもう1枚使える */
-  const hold = !!S.comboHold && !dead(0) && !dead(1);
-  S.comboHold = false;
-
-  if(!hold){
-    /* 封印は、封じられた人の番が終わった時点で解ける */
-    if(S.seal && S.seal[S.turn] > 0){
-      S.seal[S.turn]--;
-      if(S.seal[S.turn] === 0) msg += `<span class="sub">${NAMES[S.turn]}の封印が解けた</span>`;
-    }
-    msg += tickPoison();
+  /* 封印は、封じられた人の番が終わった時点で解ける */
+  if(S.seal && S.seal[S.turn] > 0){
+    S.seal[S.turn]--;
+    if(S.seal[S.turn] === 0) msg += `<span class="sub">${NAMES[S.turn]}の封印が解けた</span>`;
   }
+  msg += tickPoison();
 
   dropHandModsOnOut().forEach(l =>
     msg += `<span class="sub">${NAMES[l.p]}の${hn(l.h)}手が落ちたので、${l.kind}は解けた</span>`);
@@ -4676,17 +4662,10 @@ function endTurn(msg){
   S.step = null;
   S.pending = null;
   S.phase = "normal";
-  if(hold){
-    const left = S.combo ? S.combo.left : 0;
-    S.msg = msg + `<span class="sub">コンビ：あと${left}枚、続けて使えます`
-      + `（攻撃や分配をすると番が終わります）</span>`;
-  } else {
-    /* 自分の番を終えた時点の指を控えておく。巻き戻しが戻る先はここ */
-    S.snaps[actor] = (S.snaps[actor] || []).concat([S.hands[actor].slice()]).slice(-3);
-    if(S.combo && S.combo.p === actor) S.combo = null;   // 使い切らずに番を終えたら消える
-    S.turn = foe(S.turn);
-    S.msg = msg + `<span class="sub">次は ${NAMES[S.turn]}</span>`;
-  }
+  /* 自分の番を終えた時点の指を控えておく。巻き戻しが戻る先はここ */
+  S.snaps[actor] = (S.snaps[actor] || []).concat([S.hands[actor].slice()]).slice(-3);
+  S.turn = foe(S.turn);
+  S.msg = msg + `<span class="sub">次は ${NAMES[S.turn]}</span>`;
   closeAllPanels();
   stopTimer(); clearTimeout(watchdog);
   render();
@@ -4694,7 +4673,7 @@ function endTurn(msg){
   busy = false;
   commit();
   /* 1台版で手番が移ったら、次の人に渡るまで盤面を隠す */
-  if(!hold && needPassScreen()) showPass(S.turn, "この人の手札が出ます。<br>前の人は見ないでください。");
+  if(needPassScreen()) showPass(S.turn, "この人の手札が出ます。<br>前の人は見ないでください。");
   cpuTick();
 }
 
@@ -4729,7 +4708,6 @@ function handMods(st){
   if(!st.seen)   st.seen   = [[],[]];
   if(!st.poison) st.poison = [];
   if(!st.snaps)  st.snaps  = [[],[]];
-  if(st.combo === undefined) st.combo = null;
   return st;
 }
 
