@@ -1271,7 +1271,7 @@ const CARDS = {
   15: {name:"ポイズン", timing:"attack",  text:"このカード自体が攻撃を実行する。刺さった手は、以後2回のターン終了時に1ダメージずつ受ける"},
   16: {name:"なまけもの", timing:"self",  text:"何もしないで自分の番を終える。動くと不利になる場面で使う"},
   17: {name:"鉄壁",     timing:"defense", text:"3以上のダメージを0にする。2以下の攻撃には使えない"},
-  18: {name:"巻き戻し", timing:"self",    text:"自分の指を、前の自分の番を終えた時点の本数に戻す"},
+  18: {name:"巻き戻し", timing:"self",    text:"自分の指を、前の自分の番を終えた時点の本数に戻す。そのうえで、もう一度自分の番になる"},
 };
 const TIMING_LABEL = {self:"自ターン", attack:"攻撃", defense:"防御割り込み"};
 
@@ -1386,8 +1386,10 @@ function newState(){
     seal: [0,0],                        // 封印。その人が自分の番にカードを使えない回数
     /* 「もう一戦」は Object.assign で新しい盤面を混ぜるので、ここに
        並んでいないキーは前の試合のまま残ってしまう。状態を足したら
-       必ずここにも並べる（doubleQueue が残ると幻の2発目が飛ぶ）。 */
+       必ずここにも並べる（doubleQueue が残ると幻の2発目が飛び、
+       again が残ると次の試合で手番が渡らない）。 */
     doubleQueue: null,
+    again: false,          // 巻き戻しの「もう一度自分の番」
     sel: null, pick: null, step: null,
     seq: 0
   };
@@ -3675,9 +3677,10 @@ async function runIdle(me){
   endTurn(`<b>${NAMES[me]}</b>は何もしなかった。`);
 }
 
-/* ---- 18 巻き戻し：前の自分の番を終えた時点の指に戻す ----
-   間に受けた攻撃を無かったことにするカード。上限が下がっていたら
-   その範囲に収める（拡張が解けた後に5本へは戻れない）。 */
+/* ---- 18 巻き戻し：前の自分の番を終えた時点の指に戻し、もう一度自分の番 ----
+   間に受けた攻撃を無かったことにして、そのまま指し直せる。
+   戻すだけだと「1手損して元に戻る」だけで使い道が無かった。
+   上限が下がっていたらその範囲に収める（拡張が解けた後に5本へは戻れない）。 */
 async function runRewind(me){
   const snap = lastSnap(me);
   if(!snap) return;
@@ -3689,6 +3692,7 @@ async function runRewind(me){
   await Promise.all([0,1].map(h => poof(me, h, String(S.hands[me][h]), "heal")));
   render();
   if(checkDeath(me)) return;
+  S.again = true;                       // この番は渡さない
   endTurn(`<b>${NAMES[me]}</b>の巻き戻し。`
     + `<span class="sub">${before} → ${S.hands[me].join("/")} に戻した</span>`);
 }
@@ -4274,7 +4278,8 @@ function cpuAct(){
       const back = [0,1].map(h => Math.min(snap[h], S.max[me][h]));
       const now  = snapForSearch();
       const alt  = { h:[now.h[0].slice(), back.slice()], o:now.o, mx:now.mx, mode:now.mode };
-      if(simBest(alt, 0, me, CPU_PLY) > cpuSearch().score) return cpuUseCard(18);
+      /* 戻したあとも自分の番なので、次に指すのは自分 */
+      if(simBest(alt, me, me, CPU_PLY) > cpuSearch().score) return cpuUseCard(18);
     }
   }
   /* 略奪：相手の札を減らすのは、相手が2枚以上持っているときに効く */
@@ -4645,12 +4650,19 @@ function endTurn(msg){
   handMods(S);
   const actor = S.turn;
 
-  /* 封印は、封じられた人の番が終わった時点で解ける */
-  if(S.seal && S.seal[S.turn] > 0){
-    S.seal[S.turn]--;
-    if(S.seal[S.turn] === 0) msg += `<span class="sub">${NAMES[S.turn]}の封印が解けた</span>`;
+  /* 巻き戻しを使った時だけ、番を渡さずにもう一度同じ人が指す。
+     番が終わっていないので、封印も毒も進めない。 */
+  const again = !!S.again && !dead(0) && !dead(1);
+  S.again = false;
+
+  if(!again){
+    /* 封印は、封じられた人の番が終わった時点で解ける */
+    if(S.seal && S.seal[S.turn] > 0){
+      S.seal[S.turn]--;
+      if(S.seal[S.turn] === 0) msg += `<span class="sub">${NAMES[S.turn]}の封印が解けた</span>`;
+    }
+    msg += tickPoison();
   }
-  msg += tickPoison();
 
   dropHandModsOnOut().forEach(l =>
     msg += `<span class="sub">${NAMES[l.p]}の${hn(l.h)}手が落ちたので、${l.kind}は解けた</span>`);
@@ -4662,10 +4674,14 @@ function endTurn(msg){
   S.step = null;
   S.pending = null;
   S.phase = "normal";
-  /* 自分の番を終えた時点の指を控えておく。巻き戻しが戻る先はここ */
-  S.snaps[actor] = (S.snaps[actor] || []).concat([S.hands[actor].slice()]).slice(-3);
-  S.turn = foe(S.turn);
-  S.msg = msg + `<span class="sub">次は ${NAMES[S.turn]}</span>`;
+  if(again){
+    S.msg = msg + `<span class="sub">もう一度 ${NAMES[actor]} の番です</span>`;
+  } else {
+    /* 自分の番を終えた時点の指を控えておく。巻き戻しが戻る先はここ */
+    S.snaps[actor] = (S.snaps[actor] || []).concat([S.hands[actor].slice()]).slice(-3);
+    S.turn = foe(S.turn);
+    S.msg = msg + `<span class="sub">次は ${NAMES[S.turn]}</span>`;
+  }
   closeAllPanels();
   stopTimer(); clearTimeout(watchdog);
   render();
@@ -4673,7 +4689,7 @@ function endTurn(msg){
   busy = false;
   commit();
   /* 1台版で手番が移ったら、次の人に渡るまで盤面を隠す */
-  if(needPassScreen()) showPass(S.turn, "この人の手札が出ます。<br>前の人は見ないでください。");
+  if(!again && needPassScreen()) showPass(S.turn, "この人の手札が出ます。<br>前の人は見ないでください。");
   cpuTick();
 }
 
