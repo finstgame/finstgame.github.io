@@ -110,19 +110,36 @@ export class FinstArena {
       this.mesh(new THREE.CylinderGeometry(1.03,1.2,.3,8),stoneMat(0x39505c),root,vector(0,.15,0));
       this.mesh(new THREE.CylinderGeometry(.92,.95,.075,48),stoneMat(0x152b36),root,vector(0,.335,0));
       const aura=this.ring(root,1.01,COLORS[p],.36,.028);
-      const sticks=[];
+      // A small sculpted hand: connected palm, rounded fingers, nails and joint creases.
+      const hand=new THREE.Group();root.add(hand);
+      const skin=new THREE.MeshStandardMaterial({color:0xf1c4a2,roughness:.62,metalness:0});
+      const palm=this.mesh(new THREE.SphereGeometry(.55,20,12),skin,hand,vector(0,.63,0));
+      palm.scale.set(1.35,.58,.58);
+      const cuff=this.mesh(new THREE.CylinderGeometry(.38,.32,.24,20),stoneMat(COLORS[p]),hand,vector(0,.44,0));
+      cuff.scale.z=.75;
+      const fingers=[];
       for(let i=0;i<5;i++){
-        const stick=new THREE.Group();stick.position.set((i-2)*.31,.38,0);root.add(stick);
-        this.mesh(new THREE.CylinderGeometry(.072,.095,1.48,6),stoneMat(0xe3b778),stick,vector(0,.74,0));
-        this.mesh(new THREE.CylinderGeometry(.078,.078,.14,6),stoneMat(COLORS[p]),stick,vector(0,1.35,0));
-        this.mesh(new THREE.SphereGeometry(.075,8,6),glowMat(COLORS[p],.75),stick,vector(0,1.51,0));
-        sticks.push(stick);
+        const finger=this.makeFinger([1.36,1.52,1.42,1.18,1.06][i]);
+        finger.position.y=.76;hand.add(finger);fingers.push(finger);
       }
       const button=document.createElement('button');button.className='arena-hand';button.style.setProperty('--hand-color',`#${COLORS[p].toString(16)}`);
       button.addEventListener('click',()=>this.onPick(p,h));this.labelHost.append(button);
-      this.handNodes[p][h]={root,sticks,aura,button,selected:false,target:false};
+      this.handNodes[p][h]={root,hand,palm,fingers,aura,button,selected:false,target:false};
     }
     this.setView({hands:[[1,1],[1,1]],max:[[4,4],[4,4]],bottom:0,names:['あなた','相手'],turn:0});
+  }
+  makeFinger(length){
+    const finger=new THREE.Group();
+    const skin=new THREE.MeshStandardMaterial({color:0xf1c4a2,roughness:.62});
+    this.mesh(new THREE.CapsuleGeometry(.145,length-.29,6,12),skin,finger,vector(0,length/2,0));
+    const nail=this.mesh(new THREE.SphereGeometry(1,12,8),new THREE.MeshStandardMaterial({color:0xffead7,roughness:.28}),finger,vector(0,length-.22,.137));
+    nail.scale.set(.103,.165,.03);
+    // Shallow arcs on the front surface read as knuckles, without striping the tip.
+    for(const y of [length*.34,length*.64]){
+      const crease=this.mesh(new THREE.TorusGeometry(.148,.009,4,12,Math.PI*.65),new THREE.MeshStandardMaterial({color:0xbd8c6d,roughness:1}),finger,vector(0,y,0));
+      crease.rotation.set(Math.PI/2,0,Math.PI*.175);
+    }
+    return finger;
   }
   point(p,h,y=.5){return this.handNodes[p][h].root.position.clone().add(vector(0,y,0));}
   setView(view){
@@ -130,7 +147,15 @@ export class FinstArena {
     this.handNodes.forEach((row,p)=>row.forEach((n,h)=>{
       const near=p===view.bottom;
       n.root.position.set(h===0?-2.25:2.25,0,near?2.45:-2.45);
-      n.sticks.forEach((s,i)=>{s.visible=i<view.hands[p][h];s.position.x=(i-(view.hands[p][h]-1)/2)*.31;});
+      const count=view.hands[p][h];
+      n.hand.visible=count>0;
+      n.palm.scale.x=Math.max(.8, count*.3);
+      n.fingers.forEach((finger,i)=>{
+        finger.visible=i<count;
+        finger.position.x=(i-(count-1)/2)*.34;
+        finger.rotation.z=i===4?-.28:0;
+      });
+      n.button.dataset.side=near?'near':'far';
       n.selected=!!view.selected && view.selected[0]===p && view.selected[1]===h;
       n.target=!!view.targets?.[p]?.[h];
       n.aura.material.opacity=n.selected?1:n.target?.65:.22;
@@ -143,7 +168,7 @@ export class FinstArena {
     this.draw();
   }
   resize(){
-    const {width,height}=this.host.getBoundingClientRect();if(!width||!height)return;
+    const width=this.host.clientWidth, height=this.host.clientHeight;if(!width||!height)return;
     this.width=width;this.height=height;this.camera.aspect=width/height;
     // Keep the four selectable hands visible even on a narrow portrait screen.
     const dist=this.camera.aspect<1.1?1.08:(this.camera.aspect>2?.76:1);
@@ -156,7 +181,10 @@ export class FinstArena {
     this.handNodes?.flat().forEach(n=>{
       const pt=n.root.position.clone().add(vector(0,.05,1.05)).project(this.camera);
       n.button.style.left=`${(pt.x*.5+.5)*this.width}px`;
-      n.button.style.top=`${(-pt.y*.5+.5)*this.height}px`;
+      const near=n.button.dataset.side==='near';
+      // Opponent controls live in the empty space above the board, as in the reference.
+      const top=near ? (-pt.y*.5+.5)*this.height : Math.max(44,Math.min(68,this.height*.16));
+      n.button.style.top=`${top}px`;
     });
   }
   setActive(active){this.active=active;this.last=0;if(!active)this.clearEffects();else{this.resize();this.draw();}}
@@ -276,14 +304,14 @@ export class FinstArena {
     const c=hit.kind==='poison'?0x7fd36b:hit.kind==='twice'?0xff7a5f:hit.kind==='double'?0xff9f45:COLORS[hit.p??0];
     if(hit.p!=null)this.beam([hit.p,hit.h],[hit.dp,hit.dh],c);
     else this.burst(this.point(hit.dp,hit.dh,.5),c,.5);
-    if(hit.out)this.shatter(hit.dp,hit.dh);
+    if(hit.out)this.dissolveHand(hit.dp,hit.dh);
   }
-  shatter(p,h){
+  dissolveHand(p,h){
     const at=this.point(p,h,.8);
     this.animate(.85,g=>{
       g.position.copy(at);
       for(let i=0;i<10;i++){
-        const m=this.mesh(new THREE.CylinderGeometry(.065,.08,.55,5),stoneMat(0xe3b778),g,vector((i%5-2)*.22,i%2*.55,0));
+        const m=this.mesh(new THREE.OctahedronGeometry(.09),glowMat(COLORS[p]),g,vector((i%5-2)*.22,i%2*.55,0));
         m.userData.start=m.position.clone();
         m.userData.v=vector(Math.sin(i*2.4)*1.5,1+(i%3)*.3,Math.cos(i*2.4)*1.5);
       }
@@ -292,7 +320,7 @@ export class FinstArena {
       g.visible=t>=.4;
       g.children.forEach((m,i)=>{
         m.position.copy(m.userData.start).addScaledVector(m.userData.v,fall);
-        m.position.y-=fall*fall*3.2;m.rotation.set(fall*(i%2?3:-3),0,fall*2);m.scale.setScalar(1-fall*.7);
+        m.position.y+=fall*.9;m.material.opacity=1-fall;m.rotation.set(fall*(i%2?3:-3),0,fall*2);m.scale.setScalar(1-fall*.7);
       });
     });
   }

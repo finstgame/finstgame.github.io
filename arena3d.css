@@ -7,7 +7,7 @@
 .has-3d .top {padding:8px 2px 14px;}
 .has-3d .brand-img {height:38px;}
 .has-3d #arena3d {display:block;position:relative;order:3;height:clamp(310px,49svh,550px);width:100%;overflow:hidden;border:1px solid #354c57;border-radius:18px;background:#09131e;}
-#arena3d canvas {display:block;width:100%;height:100%;}
+#arena3d canvas {position:absolute;inset:0;display:block;width:100%;height:100%;}
 .arena-overline {position:absolute;top:16px;left:20px;color:#b1a181;font:11px 'Zen Kaku Gothic New',sans-serif;letter-spacing:.23em;pointer-events:none;z-index:1;}
 .arena-caption {position:absolute;top:14px;right:18px;color:#a9bec6;font-size:11px;z-index:1;}
 .arena-caption a {color:inherit;text-underline-offset:4px;}
@@ -82,3 +82,6 @@
 /* The base game's generic buttons flex; the view switch is a compact toolbar control. */
 .view3d {flex:0 0 auto;}
 .has-3d .net-tag {flex:1;justify-content:flex-end;color:#a5bac7;}
+
+/* Keep the opponent's hand labels in the clear space above the arena. */
+.arena-hand[data-side="far"] {transform:translate(-50%,0);}

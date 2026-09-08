@@ -100,3 +100,18 @@ test('visiting the effects gallery preserves the offline game document',async()=
  assert.equal(await (await navigate('/')).text(),'game');
  assert.equal(await (await navigate('/effects.html')).text(),'gallery');
 });
+test('finger models show exactly 0–5 fingers and opponent labels follow the viewing seat',async()=>{
+ const THREE=await import('../assets/vendor/three.module.min.js');const oldDocument=globalThis.document;
+ globalThis.document={createElement:()=>({style:{setProperty(){}},dataset:{},addEventListener(){},setAttribute(){}})};
+ try{
+  const a=Object.create(FinstArena.prototype);a.world=new THREE.Group();a.targets=[];a.labelHost={append(){}};a.draw=()=>{};a.onPick=()=>{};a.makeHands();
+  for(const bottom of [0,1])for(let count=0;count<=5;count++){
+   a.setView({hands:[[count,count],[count,count]],max:[[5,5],[5,5]],bottom,names:['A','B'],turn:0});
+   for(let p=0;p<2;p++)for(const n of a.handNodes[p]){
+    assert.equal(n.hand.visible,count>0);assert.equal(n.fingers.filter(f=>f.visible).length,count);
+    assert.equal(n.button.dataset.side,p===bottom?'near':'far');
+   }
+  }
+  a.world.traverse(o=>{o.geometry?.dispose();o.material?.dispose();});
+ }finally{globalThis.document=oldDocument;}
+});
