@@ -9,10 +9,17 @@
 
    Supabase への通信は絶対に触らない。対戦は常に生の通信でやる。 */
 
-const VERSION = "finst-v8";
+const VERSION = "finst-3d-v3";
 const SHELL = [
   "./",
   "./index.html",
+  "./arena3d.css",
+  "./arena3d.js",
+  "./game3d.js",
+  "./effects.html",
+  "./effects.js",
+  "./assets/vendor/three.module.min.js",
+  "./assets/vendor/three.core.min.js",
   "./manifest.webmanifest",
   "./assets/supabase.min.js",
   "./assets/logo.png",
@@ -26,6 +33,7 @@ const SHELL = [
 self.addEventListener("install", e => {
   e.waitUntil((async () => {
     const c = await caches.open(VERSION);
+    if(["localhost","127.0.0.1"].includes(self.location.hostname)) self.skipWaiting();
     /* 1つでも失敗すると全部入らないので、個別に入れて取りこぼしを許す */
     await Promise.all(SHELL.map(u => c.add(u).catch(() => {})));
   })());
@@ -52,20 +60,27 @@ self.addEventListener("fetch", e => {
   /* 対戦の通信には一切手を出さない（Supabase・WebSocket・別ドメイン全部） */
   if(url.origin !== self.location.origin) return;
 
+  // During local development, reflect edits immediately; retain offline fallback.
+  if(["localhost","127.0.0.1"].includes(url.hostname)){
+    e.respondWith(fetch(req).catch(async () => (await caches.match(req)) || new Response("", {status:504})));
+    return;
+  }
   const isDoc = req.mode === "navigate" || url.pathname.endsWith("/") ||
                 url.pathname.endsWith("index.html");
 
   if(isDoc){
+    const isIndex = url.pathname.endsWith("/") || url.pathname.endsWith("/index.html");
+    const documentKey = isIndex ? "./index.html" : req;
     /* 本体はネットワーク優先。落ちた時だけ手元の写し */
     e.respondWith((async () => {
       try{
         const fresh = await fetch(req);
         const c = await caches.open(VERSION);
-        c.put("./index.html", fresh.clone());
+        if(fresh.ok) await c.put(documentKey, fresh.clone());
         return fresh;
       }catch(err){
         const c = await caches.open(VERSION);
-        return (await c.match("./index.html")) || (await c.match("./")) ||
+        return (await c.match(documentKey)) || (isIndex && await c.match("./")) ||
                new Response("オフラインです", { status: 503, headers: {"content-type":"text/plain; charset=utf-8"} });
       }
     })());

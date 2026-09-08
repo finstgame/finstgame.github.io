@@ -1,3 +1,6 @@
+<!doctype html>
+<html lang="ja">
+<head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
 <title>フィンスト</title>
@@ -1105,11 +1108,15 @@
     .dots::after{animation:none; content:"・・・";}
   }
 </style>
+<link rel="stylesheet" href="arena3d.css">
+</head>
+<body>
 
 <div class="app">
   <div class="top">
     <img class="brand-img" src="assets/logo.png" alt="FINGER STRATEGY">
     <div class="net-tag" id="netTag"></div>
+    <button class="view3d" id="view3d" aria-pressed="false">3D読込中</button>
     <button class="icon-btn" id="soundBtn" onclick="toggleSound()" aria-label="音を消す">♪</button>
     <button class="icon-btn" id="cardsBtn" onclick="openCards()" aria-label="カード一覧">カ</button>
     <button class="icon-btn" id="infoBtn" onclick="openInfo()" aria-label="遊び方とカード一覧">?</button>
@@ -1120,6 +1127,10 @@
   <div class="queue-bar" id="queueBar"></div>
 
   <div class="board" id="board1"></div>
+  <section id="arena3d" aria-label="3D対戦盤">
+    <div class="arena-overline">FINST / 浮遊闘技場</div>
+    <div class="arena-caption"><a href="effects.html" target="_blank" rel="noopener">演出を見る ↗</a></div>
+  </section>
 
   <div class="mid" id="mid">
     <svg class="cross" id="cross" viewBox="0 0 100 100" aria-hidden="true">
@@ -1449,8 +1460,13 @@ function applyRemote(snap){
 }
 
 /* 受信側は途中経過を持たないので、state の hit と手の増減から演出を組み立てる */
+let last3DHitN = null;
 async function animateDiff(before){
   const hit = S.hit;
+  if(hit && hit.n !== last3DHitN){
+    last3DHitN = hit.n;
+    window.finst3D?.hit(hit);
+  }
   if(hit && hit.p !== null && hit.p !== undefined){
     const atk = document.querySelector(`.hand[data-p="${hit.p}"][data-h="${hit.h}"]`);
     if(atk){
@@ -1723,6 +1739,7 @@ function startCPU(){
 }
 
 function enterGame(){
+  window.finst3D?.clear();
   SFX.wake(); SFX.bgmStart();
   document.getElementById("lobby").classList.remove("open");
   document.getElementById("waitBar").classList.remove("open");
@@ -1983,7 +2000,8 @@ function showLobby(mode){
 
   el.innerHTML = `
     <img class="brand-img lobby-logo" src="assets/logo.png" alt="FINGER STRATEGY">
-    <div class="tag">2人対戦・能力カードあり</div>
+    <div class="tag">3D闘技場・能力カード18種</div>
+    <a class="lobby-3d-link" href="effects.html">隕石・魔法・カウンターの3D演出を試す ↗</a>
     <div class="lobby-about">
       自分の手で相手の手をタップして本数を押しつけ、<b>相手の両手をアウトにしたら勝ち</b>。
       1試合3〜5分。
@@ -2159,6 +2177,7 @@ function initPWA(){
   if(!("serviceWorker" in navigator) || location.protocol === "file:") return;
   navigator.serviceWorker.register("sw.js").then(reg => {
     swReg = reg;
+    if(reg.waiting) showUpdateBar();
     /* 新しい版が用意できたら知らせる。黙って入れ替えると、
        対戦の途中で画面が作り直されることになる。 */
     reg.addEventListener("updatefound", () => {
@@ -2356,6 +2375,8 @@ function toLobby(){
 
 /* ---- 手番・応答の権利 ---- */
 const myTurn   = () => !online || S.turn === seat;
+const humanTurn = () => myTurn() && (!S.cpu || S.turn === 0);
+const humanTap = (p,h) => { if(!S.cpu || (S.step ? S.step.who === 0 : S.turn === 0)) tap(p,h); };
 const iRespond = () => !online || (S.pending && S.pending.responder === seat);
 
 function restart(){
@@ -2390,6 +2411,8 @@ function restart(){
 }
 
 function reset(){
+  last3DHitN = null;
+  window.finst3D?.clear();
   ratedRoom = false; ratingResult = null; ratingSentFor = null;
   passAfter = null;
   const pv = document.getElementById("pass");
@@ -3035,6 +3058,7 @@ const modeName = () => (MODES[S.mode] || MODES.quick).name;
 const bottomP = () => online ? seat : 0;
 
 function render(){
+  window.finst3D?.sync();
   if(S) handMods(S);
   document.documentElement.style.setProperty("--turn-c", col(S.turn));
   document.getElementById("cross").querySelectorAll("rect")
@@ -3065,15 +3089,15 @@ function render(){
   });
 
   document.querySelectorAll(".hand").forEach(el => {
-    el.onclick = () => tap(+el.dataset.p, +el.dataset.h);
-    el.onkeydown = e => { if(e.key === "Enter" || e.key === " "){ e.preventDefault(); tap(+el.dataset.p, +el.dataset.h); } };
+    el.onclick = () => humanTap(+el.dataset.p, +el.dataset.h);
+    el.onkeydown = e => { if(e.key === "Enter" || e.key === " "){ e.preventDefault(); humanTap(+el.dataset.p, +el.dataset.h); } };
   });
   document.querySelectorAll('.board .card[data-id]').forEach(el => {
     el.onclick = () => pickCard(+el.dataset.id);
   });
 
   document.getElementById("splitBtn").disabled =
-    S.over || S.phase !== "normal" || !!S.step || !myTurn() || splitOptions().length === 0;
+    S.over || S.phase !== "normal" || !!S.step || !humanTurn() || splitOptions().length === 0;
   document.getElementById("resetBtn").textContent = online ? "もう一戦" : "最初から";
 
   /* 相手の番のあいだは、待っていることを言葉で出す */
@@ -3091,6 +3115,7 @@ function render(){
 
 /* この手が今クリックできるか（通常攻撃の的か、カードの入力対象か） */
 function isTargetable(p,h){
+  if(S.cpu && (S.step ? S.step.who !== 0 : S.turn !== 0)) return false;
   if(S.over || busy || !alive(p,h)) return false;
   if(S.step){
     if(S.step.need === "ownHand")   return p === S.step.who;
@@ -3104,11 +3129,11 @@ function isTargetable(p,h){
 function handHTML(p,h){
   const v = S.hands[p][h];
   const out = v === 0;
-  const isMine = p === S.turn && myTurn() && !S.over && S.phase === "normal" && !S.step;
+  const isMine = p === S.turn && humanTurn() && !S.over && S.phase === "normal" && !S.step;
   const selected = S.sel && S.sel[0] === p && S.sel[1] === h;
   const target = isTargetable(p,h);
   /* ヒールはアウトの手も選べるので、生存判定と別に扱う */
-  const healable = S.step && S.step.need === "ownHand" && (S.step.healTarget || S.step.expandTarget) && p === S.step.who;
+  const healable = (!S.cpu || S.step?.who === 0) && S.step && S.step.need === "ownHand" && (S.step.healTarget || S.step.expandTarget) && p === S.step.who;
 
   let cls = "hand";
   if(isMine && !out) cls += " selectable";
@@ -3164,7 +3189,7 @@ function cardsHTML(p){
 
 function cardBtnHTML(id, i, p){
   const c = CARDS[id];
-  const u = usable(id, p);
+  const u = S.cpu && S.turn !== p ? {ok:false, why:"相手の番"} : usable(id, p);
   return `<button class="card${S.pick === id ? " picked" : ""}" data-id="${id}" data-timing="${c.timing}"
             style="--i:${i}" ${u.ok ? "" : "disabled"}
             aria-label="${c.name}：${c.text}${u.ok ? "" : "（今は使えません：" + u.why + "）"}">
@@ -3415,7 +3440,7 @@ function respond(id){
   }
 
   if(id === 9){                                  // ヒール：無効化して自分の手に足す
-    consume(r, 9, {h: p.toHand});
+    consume(r, 9, {h: p.toHand, stage:"block"});
     closeSheet();
     S.phase = "resolving";
     beginStep({id:9, who:r, need:"ownHand", healTarget:true, amount:p.damage,
@@ -3424,7 +3449,7 @@ function respond(id){
   }
 
   if(id === 7){                                  // カウンター：無効化して、攻撃してきた手に返す
-    consume(r, 7, {h: p.toHand});
+    consume(r, 7, {h: p.toHand, to: p.fromHand != null && alive(foe(r), p.fromHand) ? p.fromHand : ([0,1].find(h => alive(foe(r), h)) ?? 0)});
     closeSheet();
     S.phase = "resolving";
     /* 返し先は攻撃してきた手。選ばせると、迷っているあいだに攻撃側の
@@ -3466,7 +3491,8 @@ async function resolvePending(){
   const after = norm(before + p.damage, p.to, p.toHand);
   /* 相手の端末でも突き出し→着弾を再現できるように残す */
   S.hit = {p: src ? src.p : null, h: src ? src.h : null,
-           dp: p.to, dh: p.toHand, dmg: p.damage, out: after === 0};
+           dp: p.to, dh: p.toHand, dmg: p.damage, out: after === 0,
+           kind:p.kind, n:Date.now().toString(36)+"-"+Math.random().toString(36).slice(2)};
   await strike(src, p.to, p.toHand, p.damage, after);
 
   const via = p.kind === "counter" ? "カウンターで返された攻撃" :
@@ -3513,6 +3539,8 @@ async function resolvePending(){
 
 /* 突き出す→着弾→折れる、の一連（Phase 1 の演出をそのまま使う） */
 async function strike(src, dp, dh, dmg, after){
+  last3DHitN = S.hit?.n;
+  if(S.hit) window.finst3D?.hit(S.hit);
   const defEl = document.querySelector(`.hand[data-p="${dp}"][data-h="${dh}"]`);
   if(src){
     const atkEl = document.querySelector(`.hand[data-p="${src.p}"][data-h="${src.h}"]`);
@@ -3561,6 +3589,7 @@ async function poof(p, h, label, kind){
 
 /* ================= カード ================= */
 function pickCard(id){
+  if(!humanTurn()) return;
   if(busy || S.over || S.phase !== "normal" || S.step || !myTurn()) return;
   if(!S.cards[S.turn].includes(id)) return;
   if(!usable(id, S.turn).ok) return;
@@ -3844,6 +3873,9 @@ function stepGotHand(p,h){
   if(st.id === 9){                       // ヒール：回復先を選んだ
     const me = st.who, amt = st.amount;
     const before = S.hands[me][h];
+    // Preserve the chosen healing hand for the remote presentation, too.
+    S.play = {...S.play, detail:{h, stage:"heal"}, n:S.play.n+1};
+    window.finst3D?.card(9, me, S.play.detail);
     const after = Math.min(before + amt, S.max[me][h]);   // その手の上限を超える分は切り捨て
     S.step = null; closeStepUI();
     S.hands[me][h] = after;
@@ -3906,7 +3938,8 @@ function stepGotNumber(n){
     S.step = null; closeStepUI();
     busy = true;
     const before = S.hands[tp][th];
-    spend(me, 3, {h: th}).then(() => {
+    spend(me, 3, {h: th}).then(async () => {
+      await window.finst3D?.settle(3);
       S.hands[tp][th] = before + n;
       render();
       return poof(tp, th, "+" + n, "heal");
@@ -4558,8 +4591,10 @@ function fxSwap(color){
 
 /* カードが使われたときに、そのカードらしい効果を出す */
 function playCardFx(id, p, detail){
+  window.finst3D?.card(id, p, detail);
   const f = FX[id]; if(!f) return;
   cardCutIn(id);
+  if(window.finst3D?.enabled) return;
   const c = f.c, opp = foe(p);
   const live = h => S.hands[p][h] > 0;
   switch(id){
@@ -4612,6 +4647,7 @@ function splitOptions(){
 }
 
 function openSplit(){
+  if(!humanTurn()) return;
   if(busy || S.over || S.phase !== "normal" || S.step || !myTurn()) return;
   S.sel = null;
   closeCard();
@@ -4872,5 +4908,16 @@ function showWin(){
   reportRating();
 }
 
+// A narrow presentation adapter; no network or game mutation belongs in the renderer.
+window.finstPick = (p,h) => humanTap(p,h);
+window.getFinst3DView = () => !S ? null : ({
+  hands:S.hands, max:S.max, bottom:bottomP(), names:NAMES, turn:S.turn,
+  mode:S.mode, selected:S.sel, disabled:busy || S.over,
+  clickable:[0,1].map(p=>[0,1].map(h=>handEl(p,h)?.tabIndex===0)),
+  targets:[0,1].map(p=>[0,1].map(h=>handEl(p,h)?.classList.contains("target")))
+});
 boot();
 </script>
+<script type="module" src="game3d.js"></script>
+</body>
+</html>
