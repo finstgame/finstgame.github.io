@@ -23,6 +23,7 @@ export class FinstArena {
     this.camera.position.set(0,11.5,13.5); this.camera.lookAt(0,.2,0);
     this.renderer=new THREE.WebGLRenderer({antialias:true,alpha:false,powerPreference:'low-power'});
     this.renderer.setPixelRatio(Math.min(devicePixelRatio,1.65));
+    this.renderer.localClippingEnabled=true;
     this.renderer.outputColorSpace=THREE.SRGBColorSpace;
     this.renderer.toneMapping=THREE.ACESFilmicToneMapping;
     this.renderer.toneMappingExposure=1.35;
@@ -59,7 +60,10 @@ export class FinstArena {
       if(!this.reduced){
         this.dust.rotation.y=this.time*.015;
         this.shards.forEach((s,i)=>{s.position.y=s.userData.y+Math.sin(this.time*.55+i)*.16;s.rotation.y+=dt*.09;});
-        this.handNodes.flat().forEach(n=>{n.aura.material.opacity=n.selected?.9:n.target?.45+Math.sin(this.time*4)*.2:.2;});
+        this.handNodes.flat().forEach(n=>{
+          n.aura.material.opacity=n.selected?1:n.target?.7+Math.sin(this.time*4)*.15:.65;
+          n.runes.rotation.y=this.time*.12;
+        });
       }
       this.draw();
     };
@@ -107,39 +111,128 @@ export class FinstArena {
     this.handNodes=[[],[]];
     for(let p=0;p<2;p++)for(let h=0;h<2;h++){
       const root=new THREE.Group();root.userData.hand=[p,h];this.world.add(root);this.targets.push(root);
-      this.mesh(new THREE.CylinderGeometry(1.03,1.2,.3,8),stoneMat(0x39505c),root,vector(0,.15,0));
-      this.mesh(new THREE.CylinderGeometry(.92,.95,.075,48),stoneMat(0x152b36),root,vector(0,.335,0));
-      const aura=this.ring(root,1.01,COLORS[p],.36,.028);
-      // A small sculpted hand: connected palm, rounded fingers, nails and joint creases.
-      const hand=new THREE.Group();root.add(hand);
-      const skin=new THREE.MeshStandardMaterial({color:0xf1c4a2,roughness:.62,metalness:0});
-      const palm=this.mesh(new THREE.SphereGeometry(.55,20,12),skin,hand,vector(0,.63,0));
-      palm.scale.set(1.35,.58,.58);
-      const cuff=this.mesh(new THREE.CylinderGeometry(.38,.32,.24,20),stoneMat(COLORS[p]),hand,vector(0,.44,0));
-      cuff.scale.z=.75;
+      // A flat, luminous portal hides the wrist; the hand emerges through its surface.
+      this.mesh(new THREE.CylinderGeometry(1.06,1.1,.13,64),stoneMat(0x172c38),root,vector(0,.27,0));
+      const portal=this.mesh(new THREE.CircleGeometry(.94,64),glowMat(0x061820),root,vector(0,.345,0));
+      portal.rotation.x=-Math.PI/2;
+      const halo=this.mesh(new THREE.RingGeometry(.56,1.12,64),glowMat(COLORS[p],.12),root,vector(0,.36,0));
+      halo.rotation.x=-Math.PI/2;halo.material.toneMapped=false;
+      const aura=this.ring(root,1.03,COLORS[p],.37,.025);
+      aura.material.toneMapped=false;
+      this.ring(root,.89,COLORS[p],.375,.012);
+      this.ring(root,.59,COLORS[p],.38,.014);
+      const runes=new THREE.Group();root.add(runes);
+      const lines=[];
+      const stroke=(a,b)=>lines.push(...a,...b);
+      for(let i=0;i<6;i++){
+        const a=i*TAU/6,b=(i+2)*TAU/6;
+        stroke([Math.sin(a)*.82,.38,Math.cos(a)*.82],[Math.sin(b)*.82,.38,Math.cos(b)*.82]);
+      }
+      for(let i=0;i<16;i++){
+        const a=i*TAU/16, x=Math.sin(a),z=Math.cos(a);
+        stroke([x*.935,.38,z*.935],[x*.985,.38,z*.985]);
+        if(i%2===0)stroke([x*.95-z*.025,.38,z*.95+x*.025],[x*.975+z*.025,.38,z*.975-x*.025]);
+      }
+      const runeGeo=new THREE.BufferGeometry();runeGeo.setAttribute('position',new THREE.Float32BufferAttribute(lines,3));
+      runes.add(new THREE.LineSegments(runeGeo,new THREE.LineBasicMaterial({color:COLORS[p],transparent:true,opacity:.75})));
+      // The dorsal side (+Z) faces the camera, with fingers pointing away like the reference.
+      const hand=new THREE.Group();hand.position.set(0,.37,.38);hand.rotation.x=-.72;root.add(hand);
+      hand.scale.x=h===0?-1:1;
+      const clip=[new THREE.Plane(vector(0,1,0),-.355)];
+      const skin=new THREE.MeshStandardMaterial({color:0xc47b54,roughness:.72,clippingPlanes:clip});
+      const nailMaterial=new THREE.MeshStandardMaterial({color:0xe9bba5,roughness:.38,clippingPlanes:clip});
+      // An elliptical, tapered volume gives the wrist and back one continuous skin.
+      const profile=new THREE.CatmullRomCurve3([
+        vector(.25,-.5,.16),vector(.27,-.08,.175),vector(.32,.25,.19),
+        vector(.46,.55,.225),vector(.51,.83,.225),vector(.49,1.02,.18),vector(.34,1.14,.09),vector(0,1.17,0)
+      ]);
+      const vertices=[],indices=[],rings=32,sides=32;
+      for(let j=0;j<=rings;j++){
+        const v=profile.getPoint(j/rings);
+        for(let k=0;k<=sides;k++){
+          const a=k/sides*TAU;
+          vertices.push(Math.cos(a)*Math.max(0,v.x),v.y,Math.sin(a)*Math.max(0,v.z));
+          if(j<rings&&k<sides){const i=j*(sides+1)+k;indices.push(i,i+sides+1,i+1,i+1,i+sides+1,i+sides+2);}
+        }
+      }
+      const palmGeo=new THREE.BufferGeometry();palmGeo.setAttribute('position',new THREE.Float32BufferAttribute(vertices,3));palmGeo.setIndex(indices);palmGeo.computeVertexNormals();
+      const palm=this.mesh(palmGeo,skin,hand);
       const fingers=[];
+      const positions=[[-.39,1.04,0],[-.12,1.105,0],[.16,1.07,0],[.405,.98,-.015],[-.49,.44,-.025]];
       for(let i=0;i<5;i++){
-        const finger=this.makeFinger([1.36,1.52,1.42,1.18,1.06][i]);
-        finger.position.y=.76;hand.add(finger);fingers.push(finger);
+        const finger=this.makeFinger([1.03,1.16,1.07,.81,.74][i],skin,nailMaterial,i===4?.155:.132);
+        finger.position.set(...positions[i]);hand.add(finger);fingers.push(finger);
       }
       const button=document.createElement('button');button.className='arena-hand';button.style.setProperty('--hand-color',`#${COLORS[p].toString(16)}`);
       button.addEventListener('click',()=>this.onPick(p,h));this.labelHost.append(button);
-      this.handNodes[p][h]={root,hand,palm,fingers,aura,button,selected:false,target:false};
+      this.handNodes[p][h]={root,hand,palm,fingers,aura,runes,button,selected:false,target:false};
     }
     this.setView({hands:[[1,1],[1,1]],max:[[4,4],[4,4]],bottom:0,names:['あなた','相手'],turn:0});
   }
-  makeFinger(length){
-    const finger=new THREE.Group();
-    const skin=new THREE.MeshStandardMaterial({color:0xf1c4a2,roughness:.62});
-    this.mesh(new THREE.CapsuleGeometry(.145,length-.29,6,12),skin,finger,vector(0,length/2,0));
-    const nail=this.mesh(new THREE.SphereGeometry(1,12,8),new THREE.MeshStandardMaterial({color:0xffead7,roughness:.28}),finger,vector(0,length-.22,.137));
-    nail.scale.set(.103,.165,.03);
-    // Shallow arcs on the front surface read as knuckles, without striping the tip.
-    for(const y of [length*.34,length*.64]){
-      const crease=this.mesh(new THREE.TorusGeometry(.148,.009,4,12,Math.PI*.65),new THREE.MeshStandardMaterial({color:0xbd8c6d,roughness:1}),finger,vector(0,y,0));
-      crease.rotation.set(Math.PI/2,0,Math.PI*.175);
+  makeFinger(length,skin,nailMaterial,radius){
+    const finger=new THREE.Group(), joints=[];
+    let parent=finger;
+    const lengths=[length*.44,length*.32,length*.24];
+    for(let i=0;i<3;i++){
+      const joint=new THREE.Group();parent.add(joint);joints.push(joint);
+      if(i)joint.position.y=lengths[i-1];
+      const r=radius*(1-i*.1),segment=lengths[i];
+      if(i===2){
+        const nail=this.mesh(new THREE.SphereGeometry(1,12,8),nailMaterial,joint,vector(0,segment*.45,r*.85));
+        nail.scale.set(r*.72,segment*.32,.019);
+      }
+      parent=joint;
     }
+    finger.userData.joints=joints;
+    finger.userData.lengths=lengths;
+    finger.userData.radius=radius;
+    finger.userData.body=this.mesh(new THREE.BufferGeometry(),skin,finger);
     return finger;
+  }
+  poseHand(n,count){
+    n.hand.visible=count>0;
+    if(n.poseCount===count)return;
+    n.poseCount=count;
+    n.fingers.forEach((finger,i)=>{
+      const extended=i<count;
+      finger.userData.extended=extended;
+      const joints=finger.userData.joints;
+      if(i===4){
+        // The thumb stays tucked until five; it grows from the side of the palm.
+        finger.rotation.set(extended?-.10:-.65,0,extended?.78:-.55);
+        joints[0].rotation.x=extended?0:-.7;
+        joints[1].rotation.x=extended?-.1:-1.05;
+        joints[2].rotation.x=extended?-.08:-.55;
+      }else{
+        const spread=count===2?[-.10,.10,0,0]:[-.06,-.015,.045,.14];
+        finger.rotation.z=extended?-spread[i]:0;
+        joints[0].rotation.x=extended?-.035:-1.30;
+        joints[1].rotation.x=extended?-.045:-1.65;
+        joints[2].rotation.x=extended?-.02:-.85;
+      }
+      this.updateFingerSurface(finger);
+    });
+  }
+  updateFingerSurface(finger){
+    // One continuous surface follows the bent joints, avoiding stacked capsule seams.
+    const {joints,lengths,radius,body}=finger.userData;
+    const points=[vector()],orientation=new THREE.Quaternion();
+    joints.forEach((joint,i)=>{
+      orientation.multiply(joint.quaternion);
+      points.push(points[i].clone().add(vector(0,lengths[i],0).applyQuaternion(orientation)));
+    });
+    const curve=new THREE.CatmullRomCurve3(points);
+    const geo=new THREE.TubeGeometry(curve,24,radius,12,false);
+    const pos=geo.attributes.position;
+    for(let j=0;j<=24;j++){
+      const t=j/24,center=curve.getPointAt(t);
+      const taper=t>.86?.8624*Math.sqrt(Math.max(0,1-((t-.86)/.14)**2)):1-t*.16;
+      for(let k=0;k<=12;k++){
+        const i=j*13+k,v=vector().fromBufferAttribute(pos,i).sub(center).multiplyScalar(taper).add(center);
+        pos.setXYZ(i,v.x,v.y,v.z);
+      }
+    }
+    geo.computeVertexNormals();body.geometry.dispose();body.geometry=geo;
   }
   point(p,h,y=.5){return this.handNodes[p][h].root.position.clone().add(vector(0,y,0));}
   setView(view){
@@ -148,17 +241,11 @@ export class FinstArena {
       const near=p===view.bottom;
       n.root.position.set(h===0?-2.25:2.25,0,near?2.45:-2.45);
       const count=view.hands[p][h];
-      n.hand.visible=count>0;
-      n.palm.scale.x=Math.max(.8, count*.3);
-      n.fingers.forEach((finger,i)=>{
-        finger.visible=i<count;
-        finger.position.x=(i-(count-1)/2)*.34;
-        finger.rotation.z=i===4?-.28:0;
-      });
+      this.poseHand(n,count);
       n.button.dataset.side=near?'near':'far';
       n.selected=!!view.selected && view.selected[0]===p && view.selected[1]===h;
       n.target=!!view.targets?.[p]?.[h];
-      n.aura.material.opacity=n.selected?1:n.target?.65:.22;
+      n.aura.material.opacity=n.selected?1:n.target?.85:.65;
       n.button.dataset.selected=String(n.selected);n.button.dataset.target=String(n.target);
       n.button.disabled=!!view.disabled || (view.clickable ? !view.clickable[p][h] : false);
       n.button.innerHTML=`<span>${h===0?'左手':'右手'}</span><b>${view.hands[p][h]||'OUT'}</b><small>${view.max[p][h]+1}${view.mode==='deep'?'ちょうど':'以上'}でOUT</small>`;
@@ -183,7 +270,7 @@ export class FinstArena {
       n.button.style.left=`${(pt.x*.5+.5)*this.width}px`;
       const near=n.button.dataset.side==='near';
       // Opponent controls live in the empty space above the board, as in the reference.
-      const top=near ? (-pt.y*.5+.5)*this.height : Math.max(44,Math.min(68,this.height*.16));
+      const top=near ? (-pt.y*.5+.5)*this.height : Math.max(40,Math.min(62,this.height*.14));
       n.button.style.top=`${top}px`;
     });
   }

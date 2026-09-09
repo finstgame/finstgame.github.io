@@ -100,7 +100,7 @@ test('visiting the effects gallery preserves the offline game document',async()=
  assert.equal(await (await navigate('/')).text(),'game');
  assert.equal(await (await navigate('/effects.html')).text(),'gallery');
 });
-test('finger models show exactly 0–5 fingers and opponent labels follow the viewing seat',async()=>{
+test('hand poses raise 0–5 fingers, tuck the rest, and keep dorsal sides facing the viewer',async()=>{
  const THREE=await import('../assets/vendor/three.module.min.js');const oldDocument=globalThis.document;
  globalThis.document={createElement:()=>({style:{setProperty(){}},dataset:{},addEventListener(){},setAttribute(){}})};
  try{
@@ -108,7 +108,17 @@ test('finger models show exactly 0–5 fingers and opponent labels follow the vi
   for(const bottom of [0,1])for(let count=0;count<=5;count++){
    a.setView({hands:[[count,count],[count,count]],max:[[5,5],[5,5]],bottom,names:['A','B'],turn:0});
    for(let p=0;p<2;p++)for(const n of a.handNodes[p]){
-    assert.equal(n.hand.visible,count>0);assert.equal(n.fingers.filter(f=>f.visible).length,count);
+    assert.equal(n.hand.visible,count>0);assert.equal(n.fingers.filter(f=>f.userData.extended).length,count);
+    assert.equal(n.fingers.length,5);
+    assert.ok(n.hand.rotation.x<0); // fingertips point away from the camera
+    assert.equal(n.hand.scale.x,n.root.userData.hand[1]===0?-1:1);
+    for(let i=0;i<5;i++){
+     const finger=n.fingers[i];
+     assert.equal(finger.userData.extended,i<count);
+     assert.ok(i<count ? finger.userData.joints[1].rotation.x>-.2 : finger.userData.joints[1].rotation.x<-1);
+     for(const value of finger.userData.body.geometry.attributes.position.array)assert.ok(Number.isFinite(value));
+    }
+    assert.ok(n.runes.children.length>0);
     assert.equal(n.button.dataset.side,p===bottom?'near':'far');
    }
   }
