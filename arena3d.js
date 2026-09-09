@@ -23,7 +23,6 @@ export class FinstArena {
     this.camera.position.set(0,11.5,13.5); this.camera.lookAt(0,.2,0);
     this.renderer=new THREE.WebGLRenderer({antialias:true,alpha:false,powerPreference:'low-power'});
     this.renderer.setPixelRatio(Math.min(devicePixelRatio,1.65));
-    this.renderer.localClippingEnabled=true;
     this.renderer.outputColorSpace=THREE.SRGBColorSpace;
     this.renderer.toneMapping=THREE.ACESFilmicToneMapping;
     this.renderer.toneMappingExposure=1.35;
@@ -63,6 +62,11 @@ export class FinstArena {
         this.handNodes.flat().forEach(n=>{
           n.aura.material.opacity=n.selected?1:n.target?.7+Math.sin(this.time*4)*.15:.65;
           n.runes.rotation.y=this.time*.12;
+          n.crystals.forEach((crystal,i)=>{
+            if(!crystal.visible)return;
+            crystal.position.y=crystal.userData.restY+Math.sin(this.time*1.3+i*1.7)*.065;
+            crystal.rotation.y+=dt*.22;
+          });
         });
       }
       this.draw();
@@ -111,7 +115,7 @@ export class FinstArena {
     this.handNodes=[[],[]];
     for(let p=0;p<2;p++)for(let h=0;h<2;h++){
       const root=new THREE.Group();root.userData.hand=[p,h];this.world.add(root);this.targets.push(root);
-      // A flat, luminous portal hides the wrist; the hand emerges through its surface.
+      // A luminous summoning seal anchors a cluster of floating arcane crystals.
       this.mesh(new THREE.CylinderGeometry(1.06,1.1,.13,64),stoneMat(0x172c38),root,vector(0,.27,0));
       const portal=this.mesh(new THREE.CircleGeometry(.94,64),glowMat(0x061820),root,vector(0,.345,0));
       portal.rotation.x=-Math.PI/2;
@@ -135,104 +139,41 @@ export class FinstArena {
       }
       const runeGeo=new THREE.BufferGeometry();runeGeo.setAttribute('position',new THREE.Float32BufferAttribute(lines,3));
       runes.add(new THREE.LineSegments(runeGeo,new THREE.LineBasicMaterial({color:COLORS[p],transparent:true,opacity:.75})));
-      // The dorsal side (+Z) faces the camera, with fingers pointing away like the reference.
-      const hand=new THREE.Group();hand.position.set(0,.37,.38);hand.rotation.x=-.72;root.add(hand);
-      hand.scale.x=h===0?-1:1;
-      const clip=[new THREE.Plane(vector(0,1,0),-.355)];
-      const skin=new THREE.MeshStandardMaterial({color:0xc47b54,roughness:.72,clippingPlanes:clip});
-      const nailMaterial=new THREE.MeshStandardMaterial({color:0xe9bba5,roughness:.38,clippingPlanes:clip});
-      // An elliptical, tapered volume gives the wrist and back one continuous skin.
-      const profile=new THREE.CatmullRomCurve3([
-        vector(.25,-.5,.16),vector(.27,-.08,.175),vector(.32,.25,.19),
-        vector(.46,.55,.225),vector(.51,.83,.225),vector(.49,1.02,.18),vector(.34,1.14,.09),vector(0,1.17,0)
-      ]);
-      const vertices=[],indices=[],rings=32,sides=32;
-      for(let j=0;j<=rings;j++){
-        const v=profile.getPoint(j/rings);
-        for(let k=0;k<=sides;k++){
-          const a=k/sides*TAU;
-          vertices.push(Math.cos(a)*Math.max(0,v.x),v.y,Math.sin(a)*Math.max(0,v.z));
-          if(j<rings&&k<sides){const i=j*(sides+1)+k;indices.push(i,i+sides+1,i+1,i+1,i+sides+1,i+sides+2);}
-        }
-      }
-      const palmGeo=new THREE.BufferGeometry();palmGeo.setAttribute('position',new THREE.Float32BufferAttribute(vertices,3));palmGeo.setIndex(indices);palmGeo.computeVertexNormals();
-      const palm=this.mesh(palmGeo,skin,hand);
-      const fingers=[];
-      const positions=[[-.39,1.04,0],[-.12,1.105,0],[.16,1.07,0],[.405,.98,-.015],[-.49,.44,-.025]];
+      const relic=new THREE.Group();root.add(relic);
+      const crystals=[];
       for(let i=0;i<5;i++){
-        const finger=this.makeFinger([1.03,1.16,1.07,.81,.74][i],skin,nailMaterial,i===4?.155:.132);
-        finger.position.set(...positions[i]);hand.add(finger);fingers.push(finger);
+        const crystal=new THREE.Group();relic.add(crystal);
+        const geometry=new THREE.OctahedronGeometry(1,0);
+        const body=this.mesh(geometry,new THREE.MeshStandardMaterial({
+          color:p===0?0x155f67:0x62233f,emissive:COLORS[p],emissiveIntensity:.42,
+          roughness:.27,metalness:.35,flatShading:true
+        }),crystal);
+        const edges=new THREE.LineSegments(new THREE.EdgesGeometry(geometry),new THREE.LineBasicMaterial({color:new THREE.Color(COLORS[p]).lerp(new THREE.Color(0xffffff),.4),toneMapped:false,transparent:true,opacity:.95}));
+        crystal.add(edges);
+        crystal.rotation.set(.12,.6+i*1.3,.14);
+        crystals.push(crystal);
       }
       const button=document.createElement('button');button.className='arena-hand';button.style.setProperty('--hand-color',`#${COLORS[p].toString(16)}`);
       button.addEventListener('click',()=>this.onPick(p,h));this.labelHost.append(button);
-      this.handNodes[p][h]={root,hand,palm,fingers,aura,runes,button,selected:false,target:false};
+      this.handNodes[p][h]={root,relic,crystals,aura,runes,button,selected:false,target:false};
     }
     this.setView({hands:[[1,1],[1,1]],max:[[4,4],[4,4]],bottom:0,names:['あなた','相手'],turn:0});
   }
-  makeFinger(length,skin,nailMaterial,radius){
-    const finger=new THREE.Group(), joints=[];
-    let parent=finger;
-    const lengths=[length*.44,length*.32,length*.24];
-    for(let i=0;i<3;i++){
-      const joint=new THREE.Group();parent.add(joint);joints.push(joint);
-      if(i)joint.position.y=lengths[i-1];
-      const r=radius*(1-i*.1),segment=lengths[i];
-      if(i===2){
-        const nail=this.mesh(new THREE.SphereGeometry(1,12,8),nailMaterial,joint,vector(0,segment*.45,r*.85));
-        nail.scale.set(r*.72,segment*.32,.019);
-      }
-      parent=joint;
-    }
-    finger.userData.joints=joints;
-    finger.userData.lengths=lengths;
-    finger.userData.radius=radius;
-    finger.userData.body=this.mesh(new THREE.BufferGeometry(),skin,finger);
-    return finger;
-  }
-  poseHand(n,count){
-    n.hand.visible=count>0;
-    if(n.poseCount===count)return;
-    n.poseCount=count;
-    n.fingers.forEach((finger,i)=>{
-      const extended=i<count;
-      finger.userData.extended=extended;
-      const joints=finger.userData.joints;
-      if(i===4){
-        // The thumb stays tucked until five; it grows from the side of the palm.
-        finger.rotation.set(extended?-.10:-.65,0,extended?.78:-.55);
-        joints[0].rotation.x=extended?0:-.7;
-        joints[1].rotation.x=extended?-.1:-1.05;
-        joints[2].rotation.x=extended?-.08:-.55;
-      }else{
-        const spread=count===2?[-.10,.10,0,0]:[-.06,-.015,.045,.14];
-        finger.rotation.z=extended?-spread[i]:0;
-        joints[0].rotation.x=extended?-.035:-1.30;
-        joints[1].rotation.x=extended?-.045:-1.65;
-        joints[2].rotation.x=extended?-.02:-.85;
-      }
-      this.updateFingerSurface(finger);
+  setCrystalCount(n,count){
+    n.relic.visible=count>0;
+    if(n.crystalCount===count)return;
+    n.crystalCount=count;
+    n.crystals.forEach((crystal,i)=>{
+      crystal.visible=i<count;
+      // A shallow fan keeps every crystal silhouette separate from this camera angle.
+      const spacing=[0,0,.82,.59,.47,.38][count];
+      const x=(i-(count-1)/2)*spacing;
+      const y=count===1?1.35:1.18+Math.cos((i-(count-1)/2)*.65)*.14;
+      crystal.position.set(x,y,0);
+      crystal.userData.restY=y;
+      crystal.scale.setScalar([.24,.49,.35,.31,.27,.24][count]);
+      crystal.scale.y*=1.65;
     });
-  }
-  updateFingerSurface(finger){
-    // One continuous surface follows the bent joints, avoiding stacked capsule seams.
-    const {joints,lengths,radius,body}=finger.userData;
-    const points=[vector()],orientation=new THREE.Quaternion();
-    joints.forEach((joint,i)=>{
-      orientation.multiply(joint.quaternion);
-      points.push(points[i].clone().add(vector(0,lengths[i],0).applyQuaternion(orientation)));
-    });
-    const curve=new THREE.CatmullRomCurve3(points);
-    const geo=new THREE.TubeGeometry(curve,24,radius,12,false);
-    const pos=geo.attributes.position;
-    for(let j=0;j<=24;j++){
-      const t=j/24,center=curve.getPointAt(t);
-      const taper=t>.86?.8624*Math.sqrt(Math.max(0,1-((t-.86)/.14)**2)):1-t*.16;
-      for(let k=0;k<=12;k++){
-        const i=j*13+k,v=vector().fromBufferAttribute(pos,i).sub(center).multiplyScalar(taper).add(center);
-        pos.setXYZ(i,v.x,v.y,v.z);
-      }
-    }
-    geo.computeVertexNormals();body.geometry.dispose();body.geometry=geo;
   }
   point(p,h,y=.5){return this.handNodes[p][h].root.position.clone().add(vector(0,y,0));}
   setView(view){
@@ -241,7 +182,7 @@ export class FinstArena {
       const near=p===view.bottom;
       n.root.position.set(h===0?-2.25:2.25,0,near?2.45:-2.45);
       const count=view.hands[p][h];
-      this.poseHand(n,count);
+      this.setCrystalCount(n,count);
       n.button.dataset.side=near?'near':'far';
       n.selected=!!view.selected && view.selected[0]===p && view.selected[1]===h;
       n.target=!!view.targets?.[p]?.[h];
