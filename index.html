@@ -285,6 +285,11 @@
   .fb-actions{display:flex; gap:8px; justify-content:flex-end;}
   .fb-actions button{padding:10px 18px; border-radius:11px;}
   .fb-actions .primary{min-width:96px;}
+  /* 決定ボタンは本来「いま誰の番か」の色になる（緑／ピンク）。
+     フィードバックは番と関係ないので、ロビーと同じ木の色に固定する */
+  .fb .primary{background:var(--wood); color:#0D1522; border-color:var(--wood);}
+  .fb .primary:hover:not(:disabled){background:#EDC58D; border-color:#EDC58D;}
+  .fb .ghost:hover:not(:disabled){border-color:var(--wood);}
 
   /* ---- 1台版の交代画面 ---- */
   .pass{
