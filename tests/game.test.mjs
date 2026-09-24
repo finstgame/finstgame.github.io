@@ -45,7 +45,9 @@ test('repeated remote snapshots do not replay the same 3D impact',async()=>{
 });
 test('all 18 cards have a 3D presentation without mutating their input',()=>{
  const a=Object.create(FinstArena.prototype),events=[];
- for(const method of ['magic','meteor','shield','beam','burst'])a[method]=(...args)=>events.push([method,...args]);
+ // Every presentation primitive counts; positions are stubbed because this arena has no hands.
+ for(const method of ['magic','meteor','shield','beam','burst','shockwave','pillar','vortex','shatter','implode','chains','clock','eye','wall','bubbles','sleepy','cardShard','flash','later','shake'])a[method]=(...args)=>events.push([method,...args]);
+ a.point=a.side=()=>({});
  for(let id=1;id<=18;id++){const before=events.length;const detail=Object.freeze({h:1,from:1,to:0});a.card(id,0,detail);assert.ok(events.length>before,`card ${id}`);}
 });
 test('impact-created child effects survive the frame and are later disposed',()=>{

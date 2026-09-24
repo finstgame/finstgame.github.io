@@ -32,7 +32,11 @@
 .has-3d .bar button {min-height:44px;}
 .has-3d .step-bar,.has-3d .panel {border-color:#799ca9;background:#172c38;}
 .has-3d .step-bar.open {position:sticky;bottom:10px;z-index:9;box-shadow:0 10px 35px #0009;}
-.has-3d .fx-band {top:28%;padding:13px 22px;background:linear-gradient(90deg,transparent,#09131ed9 25%,#09131ed9 75%,transparent);}
+/* 3D表示では、カード名の帯を3D盤の下に出して、盤面の演出を隠さない。
+   帯はカードの色のまま（以前の暗い帯は、暗い文字と重なって名前が読めなかった） */
+.has-3d .fx-band {top:28%;padding:13px 22px;}
+/* 暗転は3D盤を中心にかけて、盤上の光を浮かび上がらせる */
+.has-3d .fx-back {background:radial-gradient(ellipse at 50% 32%, color-mix(in srgb, var(--fx-c) 34%, transparent) 0%, transparent 56%), rgba(5,9,16,.42);}
 .has-3d .fx-name {font-size:clamp(26px,5vw,48px);}
 .arena-labels {position:absolute;inset:0;pointer-events:none;}
 .arena-hand {position:absolute;transform:translate(-50%,-15%);pointer-events:auto;display:grid;grid-template-columns:auto auto;gap:0 8px;align-items:center;min-width:104px;min-height:50px;padding:5px 10px;border:1px solid #5b7380;background:#102632eb;color:#f5f0e6;border-radius:9px;box-shadow:0 4px 12px #0006;font-family:'Zen Kaku Gothic New',system-ui,sans-serif;cursor:pointer;}
@@ -85,3 +89,15 @@
 
 /* Keep the opponent's hand labels in the clear space above the arena. */
 .arena-hand[data-side="far"] {transform:translate(-50%,0);}
+
+/* カードを使った瞬間、盤面の上がその色で一瞬光る（arena3d.js の flash が明るさを動かす） */
+.arena-flash{
+  position:absolute; inset:0; z-index:2; pointer-events:none; opacity:0;
+  background:
+    radial-gradient(circle at var(--x,50%) var(--y,50%), var(--c,#fff) 0%, color-mix(in srgb, var(--c,#fff) 40%, transparent) 26%, transparent 62%),
+    radial-gradient(circle at 50% 50%, color-mix(in srgb, var(--c,#fff) 22%, transparent), transparent 80%);
+  mix-blend-mode:screen;
+  border-radius:inherit;
+}
+@media (prefers-reduced-motion: reduce){ .arena-flash{display:none;} }
+

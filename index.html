@@ -902,36 +902,110 @@
     overflow:hidden;
   }
   .fx.on{display:flex;}
+  /* 画面が一瞬沈み、カードの色が中央からにじむ */
+  .fx-back{
+    position:absolute; inset:0;
+    background:
+      radial-gradient(ellipse at 50% 50%, color-mix(in srgb, var(--fx-c) 38%, transparent) 0%, transparent 62%),
+      rgba(5,9,16,.55);
+    opacity:0;
+  }
+  .fx.on .fx-back{animation:fxBack 1.5s ease-out forwards;}
+  @keyframes fxBack{
+    0%{opacity:0;} 10%{opacity:1;} 72%{opacity:.85;} 100%{opacity:0;}
+  }
+  /* 斜めに走る速度線 */
+  .fx-lines{
+    position:absolute; inset:-20% -40%;
+    background:repeating-linear-gradient(-14deg,
+      transparent 0 34px,
+      color-mix(in srgb, var(--fx-c) 55%, transparent) 34px 36px,
+      transparent 36px 90px,
+      color-mix(in srgb, #fff 40%, transparent) 90px 91px);
+    opacity:0; transform:translateX(-18%);
+  }
+  .fx.on .fx-lines{animation:fxLines 1.5s linear forwards;}
+  @keyframes fxLines{
+    0%{opacity:0; transform:translateX(-18%);}
+    12%{opacity:.8;}
+    75%{opacity:.5;}
+    100%{opacity:0; transform:translateX(12%);}
+  }
   .fx-band{
+    position:relative;
     width:100%;
-    padding:14px 0;
+    padding:16px 0 14px;
     background:linear-gradient(90deg,
       transparent 0%,
       color-mix(in srgb, var(--fx-c) 78%, #0A1220) 12%,
       color-mix(in srgb, var(--fx-c) 92%, #0A1220) 50%,
       color-mix(in srgb, var(--fx-c) 78%, #0A1220) 88%,
       transparent 100%);
-    box-shadow:0 0 34px color-mix(in srgb, var(--fx-c) 45%, transparent);
+    box-shadow:0 0 44px color-mix(in srgb, var(--fx-c) 55%, transparent);
     text-align:center;
+    overflow:hidden;
     transform:translateX(-110%) skewY(-2deg);
-    animation:fxBand 1.5s cubic-bezier(.22,.9,.3,1) forwards;
   }
+  /* 帯の上下に細い光のふち */
+  .fx-band::before, .fx-band::after{
+    content:""; position:absolute; left:8%; right:8%; height:2px;
+    background:linear-gradient(90deg, transparent, #fff, transparent); opacity:.85;
+  }
+  .fx-band::before{top:0;} .fx-band::after{bottom:0;}
+  .fx.on .fx-band{animation:fxBand 1.5s cubic-bezier(.22,.9,.3,1) forwards;}
   @keyframes fxBand{
     0%{transform:translateX(-110%) skewY(-2deg); opacity:0;}
-    13%{transform:translateX(0) skewY(-2deg); opacity:1;}
+    12%{transform:translateX(0) skewY(-2deg); opacity:1;}
     80%{transform:translateX(0) skewY(-2deg); opacity:1;}
     100%{transform:translateX(110%) skewY(-2deg); opacity:0;}
   }
+  /* 名前の後ろに大きく透けるカード番号 */
+  .fx-num{
+    position:absolute; left:50%; top:50%;
+    transform:translate(-50%,-50%);
+    font-family:"Dela Gothic One", sans-serif;
+    font-size:clamp(70px, 26vw, 120px); line-height:1;
+    color:color-mix(in srgb, #0D1522 20%, transparent);
+    letter-spacing:.02em; pointer-events:none;
+  }
+  .fx.on .fx-num{animation:fxNum 1.5s ease-out forwards;}
+  @keyframes fxNum{
+    0%{transform:translate(-50%,-50%) scale(1.5); opacity:0;}
+    18%{transform:translate(-50%,-50%) scale(1); opacity:1;}
+    100%{transform:translate(-50%,-50%) scale(1.08); opacity:.6;}
+  }
   .fx-name{
+    position:relative; display:inline-block;
     font-weight:900;
-    font-size:clamp(26px, 9vw, 40px);
+    font-size:clamp(28px, 10vw, 44px);
     letter-spacing:.1em;
     color:#0D1522;
     text-shadow:0 2px 0 color-mix(in srgb, #fff 45%, transparent);
   }
+  /* 帯が止まった瞬間に、名前が叩きつけられる */
+  .fx.on .fx-name{animation:fxSlam 1.5s cubic-bezier(.2,1.6,.4,1) forwards;}
+  @keyframes fxSlam{
+    0%,10%{transform:scale(1.9); letter-spacing:.4em; opacity:0; filter:blur(3px);}
+    22%{transform:scale(.94); letter-spacing:.08em; opacity:1; filter:blur(0);}
+    30%{transform:scale(1.03);}
+    38%,100%{transform:scale(1); letter-spacing:.1em;}
+  }
   .fx-name .sub{
     display:block; font-size:11px; letter-spacing:.2em;
     color:color-mix(in srgb, #0D1522 65%, transparent); margin-top:2px;
+  }
+  /* 光が帯を走り抜ける */
+  .fx-glint{
+    position:absolute; top:-40%; bottom:-40%; width:22%; left:-30%;
+    background:linear-gradient(100deg, transparent, rgba(255,255,255,.75), transparent);
+    transform:skewX(-18deg); pointer-events:none;
+  }
+  .fx.on .fx-glint{animation:fxGlint 1.5s ease-in-out forwards;}
+  @keyframes fxGlint{
+    0%,24%{left:-30%; opacity:0;}
+    26%{opacity:1;}
+    52%{left:115%; opacity:1;}
+    53%,100%{left:115%; opacity:0;}
   }
 
   /* 盤の上に出す個別の効果 */
@@ -1215,7 +1289,13 @@
 
 <!-- カード使用時の演出 -->
 <div class="fx" id="fx" aria-hidden="true">
-  <div class="fx-band" id="fxBand"><span class="fx-name" id="fxName"></span></div>
+  <div class="fx-back"></div>
+  <div class="fx-lines"></div>
+  <div class="fx-band" id="fxBand">
+    <span class="fx-num" id="fxNum"></span>
+    <span class="fx-name" id="fxName"></span>
+    <span class="fx-glint"></span>
+  </div>
 </div>
 
 <!-- 遊び方 -->
@@ -4646,9 +4726,10 @@ function cardCutIn(id){
   document.documentElement.style.setProperty("--fx-c", f.c);
   document.getElementById("fxName").innerHTML =
     `${CARDS[id].name}<span class="sub">${f.label}</span>`;
+  document.getElementById("fxNum").textContent = String(id).padStart(2, "0");
+  /* 連続で使っても、背景・線・帯・光のすべてが必ず頭から流れるように */
+  wrap.classList.remove("on"); void wrap.offsetWidth;
   wrap.classList.add("on");
-  band.style.animation = "none"; void band.offsetWidth;   // 連続で使っても必ず流れるように
-  band.style.animation = "";
   clearTimeout(cardCutIn._t);
   cardCutIn._t = setTimeout(() => wrap.classList.remove("on"), 1550);
 }
