@@ -32,12 +32,16 @@
 
 届くたびに管理者へメールが飛ぶ（`supabase/migrations/20260924130000_feedback_email.sql`）。送信は Resend の無料枠を使い、Supabase から直接呼ぶ（pg_net）。
 
-**APIキーと宛先はリポジトリに書かない**（このリポジトリは公開）。Supabase Vault に入れる。これは管理者が自分で行う:
+**APIキーと宛先はリポジトリに書かない**（このリポジトリは公開）。Supabase Vault に入れる。これは管理者が自分で行う。
 
-```sql
-select vault.create_secret('re_ここにResendのAPIキー', 'resend_api_key');
-select vault.create_secret('Resendに登録したメールアドレス', 'feedback_notify_to');
-```
+ダッシュボードの **Integrations → Vault → Secrets →「Add new secret」** で、次の2つを登録する。
+
+| Name | Secret |
+| --- | --- |
+| `resend_api_key` | Resend のAPIキー（`re_` で始まる） |
+| `feedback_notify_to` | Resend に登録したメールアドレス |
+
+SQL Editor で `vault.create_secret(...)` を打つ方法もあるが、**エディタは自動保存されるので、キーが平文のままクエリ履歴に残る**。Vault の画面から入れる。
 
 - 送信元は `onboarding@resend.dev`。独自ドメインを認証するまでは、**Resendに登録したアドレス宛てにしか送れない**。宛先はそのアドレスにする。
 - どちらかが未設定なら送らない。通知に失敗してもフィードバックの保存は成功する。
