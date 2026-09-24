@@ -28,6 +28,31 @@
 2. `supabase/migrations/20260924120000_feedback.sql` を一度実行する（テーブル追加のみ。既存のゲームテーブルは変更しない）。
 3. 実行前に送られたものは「受付の準備中です」と表示され、保存されない。
 
+## メール通知
+
+届くたびに管理者へメールが飛ぶ（`supabase/migrations/20260924130000_feedback_email.sql`）。送信は Resend の無料枠を使い、Supabase から直接呼ぶ（pg_net）。
+
+**APIキーと宛先はリポジトリに書かない**（このリポジトリは公開）。Supabase Vault に入れる。これは管理者が自分で行う:
+
+```sql
+select vault.create_secret('re_ここにResendのAPIキー', 'resend_api_key');
+select vault.create_secret('Resendに登録したメールアドレス', 'feedback_notify_to');
+```
+
+- 送信元は `onboarding@resend.dev`。独自ドメインを認証するまでは、**Resendに登録したアドレス宛てにしか送れない**。宛先はそのアドレスにする。
+- どちらかが未設定なら送らない。通知に失敗してもフィードバックの保存は成功する。
+- ローカル等から送った `is_test` のものは件名に `[テスト]` が付く。
+- 送れたかどうかは SQL Editor で確かめる:
+
+```sql
+select created, status_code, left(content::text, 200) as 応答
+from net._http_response order by created desc limit 5;
+```
+
+`200` なら送信済み。`403` はキー違い・宛先がResend登録アドレスと違う、`401` はキーの誤り。
+
+キーを替えるときは `update vault.secrets set secret = '新しいキー' where name = 'resend_api_key';`。
+
 ## 読む
 
 SQL Editor で `supabase/feedback-report.sql` を実行する。未対応のものが新しい順に50件出る。読み終えたら同ファイル末尾の `update ... set handled = true` で対応済みにする。
