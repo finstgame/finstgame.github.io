@@ -35,6 +35,7 @@ import('./arena3d.js').then(({FinstArena})=>{
     clear(){arena.clearEffects();sync();},
     settle(id){return new Promise(resolve=>setTimeout(resolve,enabled&&!arena.reduced&&id===3?650:0));},
     get enabled(){return enabled;},
+    handAt(x,y){return enabled?arena.handAt(x,y):null;},
     stats(){return {effects:arena.effects.length,geometries:arena.renderer.info.memory.geometries,drawCalls:arena.renderer.info.render.calls};}
   };
   toggle.onclick=()=>{enabled=!enabled;try{localStorage.setItem('finst_3d',enabled?'on':'off');}catch{}apply();};

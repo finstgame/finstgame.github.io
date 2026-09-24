@@ -253,6 +253,39 @@
     color:var(--c);
   }
   .hand[data-out="true"] .count{color:#3B4A69; font-size:14px; padding:4px 0;}
+  /* ---- フィードバック ---- */
+  .fb{
+    position:fixed; inset:0; z-index:70; display:none;
+    background:rgba(8,13,22,.78);
+    padding:calc(16px + env(safe-area-inset-top)) 16px calc(16px + env(safe-area-inset-bottom));
+    place-items:center; overflow-y:auto; overscroll-behavior:contain;
+  }
+  .fb.open{display:grid;}
+  .fb-inner{
+    width:100%; max-width:420px; display:flex; flex-direction:column; gap:10px;
+    background:var(--panel); border:1px solid rgba(255,255,255,.12);
+    border-radius:16px; padding:18px 16px 16px;
+    box-shadow:0 18px 50px rgba(0,0,0,.5);
+  }
+  .fb-inner h3{font-size:16px; letter-spacing:.06em;}
+  .fb-lead{font-size:12px; color:var(--dim); line-height:1.6;}
+  .fb textarea{
+    width:100%; resize:vertical; min-height:110px;
+    font:inherit; font-size:16px;            /* 16px未満だとiOSが勝手に拡大する */
+    color:var(--bone); background:#0F1A2C;
+    border:2px solid #22314E; border-radius:11px; padding:10px 12px;
+  }
+  .fb textarea:focus{outline:3px solid var(--wood); outline-offset:1px;}
+  .fb-check{display:flex; gap:8px; align-items:flex-start; font-size:12px; line-height:1.5;}
+  .fb-check input{margin-top:3px; accent-color:var(--wood);}
+  .fb-note{font-size:11px; color:var(--dim);}
+  .fb-msg{font-size:12.5px; min-height:1.2em; line-height:1.5;}
+  .fb-msg[data-kind="ok"]{color:#7FC8A9;}
+  .fb-msg[data-kind="ng"]{color:#FF8E8E;}
+  .fb-actions{display:flex; gap:8px; justify-content:flex-end;}
+  .fb-actions button{padding:10px 18px; border-radius:11px;}
+  .fb-actions .primary{min-width:96px;}
+
   /* ---- 1台版の交代画面 ---- */
   .pass{
     position:fixed; inset:0; z-index:55; display:none;
@@ -1228,6 +1261,24 @@
   </div>
 </div>
 
+<!-- フィードバック。画面を3回タップすると開く -->
+<div class="fb" id="fb" role="dialog" aria-modal="true" aria-labelledby="fbTitle">
+  <div class="fb-inner">
+    <h3 id="fbTitle">開発者に送る</h3>
+    <p class="fb-lead">気づいたこと・バグ・「こうしてほしい」を書いてください。</p>
+    <textarea id="fbText" maxlength="2000" rows="5"
+      placeholder="例）縮小を使ったあと、4でアウトのはずが5でアウトになった"></textarea>
+    <label class="fb-check"><input type="checkbox" id="fbBoard" checked>
+      いまの画面の状態も一緒に送る（バグを直す手がかりになります）</label>
+    <div class="fb-note">名前や部屋コードは送りません。</div>
+    <div class="fb-msg" id="fbMsg" role="status" aria-live="polite"></div>
+    <div class="fb-actions">
+      <button class="ghost" id="fbCancel">やめる</button>
+      <button class="primary" id="fbSend">送る</button>
+    </div>
+  </div>
+</div>
+
 <!-- 1台を回して遊ぶとき、交代のあいだ盤面を隠す -->
 <div class="pass" id="pass">
   <div class="pass-inner">
@@ -1249,6 +1300,7 @@
 
 <!-- 以前はCDNから読んでいた。電波が悪いとここで止まって起動しないので同梱に変えた -->
 <script src="assets/supabase.min.js"></script>
+<script src="feedback.js"></script>
 <script>
 /* =========================================================
    フィンスト Phase 2（2a 〜 2d）
@@ -2102,6 +2154,7 @@ function leaveRoom(){
 
 function boot(){
   myId = clientId();
+  initFeedback();
   initPWA();
   document.getElementById("passGo").onclick = passDone;
   if(!window.supabase || !NET.url || !NET.key){
@@ -2120,6 +2173,102 @@ function boot(){
     document.getElementById("codeInput").value = code;
     joinRoom(code);
   }
+}
+
+/* ================= フィードバック =================
+   画面を3回タップすると開く。書いたものは Supabase の feedback に入り、
+   管理者だけが supabase/feedback-report.sql で読める。
+   「いまの画面の状態」を付けると、バグ報告がそのまま再現の材料になる。
+   （縮小の件のように、言葉だけだと状況が特定できないことがあった） */
+let fbApi = null;
+
+function initFeedback(){
+  try{
+    fbApi = window.FinstFeedback && window.FinstFeedback.create({
+      url: NET.url, key: NET.key, visitorId: myId,
+      getContext: feedbackContext, onOpen: openFeedback,
+      /* 3D盤のクリスタルを押したタップは、対戦の操作なので数えない */
+      isInteractive: e => !!(window.finst3D && window.finst3D.handAt &&
+                             window.finst3D.handAt(e.clientX, e.clientY))
+    });
+  }catch(e){ fbApi = null; }
+  document.getElementById("fbCancel").onclick = closeFeedback;
+  document.getElementById("fbSend").onclick = sendFeedback;
+  document.getElementById("fb").addEventListener("keydown", e => {
+    if(e.key === "Escape") closeFeedback();
+  });
+}
+
+/* 送った瞬間の状況。名前と部屋コードは入れない */
+function feedbackContext({ includeBoard = true } = {}){
+  const lobby = document.getElementById("lobby").classList.contains("open");
+  const winOpen = document.getElementById("win").classList.contains("open");
+  const standalone = window.matchMedia && window.matchMedia("(display-mode: standalone)").matches;
+  const ctx = {
+    screen: lobby ? "lobby" : winOpen ? "result" : "game",
+    play: online ? "online" : (S && S.cpu) ? "cpu" : "local",
+    rule: (S && S.mode) || ruleMode,
+    deck: (S && S.deck) || deckMode,
+    build: document.lastModified,             // 配信された版の日時
+    device: `${innerWidth}x${innerHeight}${standalone ? " ホーム画面" : ""}`,
+    ua: navigator.userAgent
+  };
+  if(includeBoard && S && !lobby){
+    const plain = h => String(h || "").replace(/<[^>]+>/g, " ").replace(/\s+/g, " ").trim();
+    ctx.board = {
+      seat: online ? seat : null,
+      turn: S.turn, phase: S.phase, over: !!S.over, winner: S.winner, why: S.why || "",
+      hands: S.hands, max: S.max, outAt: S.outAt,
+      expanded: S.expanded, shrunk: S.shrunk,
+      cards: S.cards, used: S.used, seal: S.seal, poison: S.poison, seen: S.seen,
+      pending: S.pending ? { from: S.pending.from, to: S.pending.to,
+                             toHand: S.pending.toHand, damage: S.pending.damage,
+                             kind: S.pending.kind } : null,
+      hist: (S.hist || []).slice(-8),
+      msg: plain(S.msg)
+    };
+  }
+  return ctx;
+}
+
+function openFeedback(){
+  const fb = document.getElementById("fb");
+  if(fb.classList.contains("open")) return;
+  const msg = document.getElementById("fbMsg");
+  msg.textContent = ""; delete msg.dataset.kind;
+  document.getElementById("fbSend").disabled = false;
+  fb.classList.add("open");
+  buzz(12);
+  setTimeout(() => document.getElementById("fbText").focus(), 50);
+}
+
+function closeFeedback(){
+  document.getElementById("fb").classList.remove("open");   // 書きかけは消さずに残す
+}
+
+async function sendFeedback(){
+  const text = document.getElementById("fbText");
+  const msg = document.getElementById("fbMsg");
+  const btn = document.getElementById("fbSend");
+  const say2 = (t, kind) => { msg.textContent = t; if(kind) msg.dataset.kind = kind; else delete msg.dataset.kind; };
+  if(!text.value.trim()){ say2("何か書いてから送ってください", "ng"); text.focus(); return; }
+  if(!fbApi){ say2("送信の準備ができていません。ページを開き直してください", "ng"); return; }
+  btn.disabled = true;
+  say2("送っています…");
+  const r = await fbApi.send(text.value, { includeBoard: document.getElementById("fbBoard").checked });
+  if(r.ok){
+    say2("届きました。ありがとうございます", "ok");
+    text.value = "";
+    setTimeout(closeFeedback, 1400);
+    return;
+  }
+  btn.disabled = false;
+  const why = {
+    network:   "送れませんでした。電波の良いところで、もう一度「送る」を押してください",
+    not_ready: "受付の準備中です。少し時間をおいてから送ってください",
+    server:    `送れませんでした（${r.status || "?"}）。もう一度お試しください`
+  }[r.reason] || "送れませんでした。もう一度お試しください";
+  say2(why + "。書いた文章は残っています", "ng");
 }
 
 /* ================= 1台を回して遊ぶときの交代 =================

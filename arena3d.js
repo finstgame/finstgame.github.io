@@ -40,10 +40,8 @@ export class FinstArena {
     this.raycaster=new THREE.Raycaster();
     this.pickListener=e=>{
       if(e.target!==this.renderer.domElement) return;
-      const r=host.getBoundingClientRect();
-      this.raycaster.setFromCamera(new THREE.Vector2((e.clientX-r.left)/r.width*2-1,-(e.clientY-r.top)/r.height*2+1),this.camera);
-      const hit=this.raycaster.intersectObjects(this.targets,true)[0];
-      if(hit){let o=hit.object;while(o && !o.userData.hand)o=o.parent;if(o){const [p,h]=o.userData.hand;this.onPick(p,h);}}
+      const hand=this.handAt(e.clientX,e.clientY);
+      if(hand)this.onPick(hand[0],hand[1]);
     };
     host.addEventListener('click',this.pickListener);
     this.observer=new ResizeObserver(()=>this.resize());this.observer.observe(host);
@@ -174,6 +172,16 @@ export class FinstArena {
       crystal.scale.setScalar([.24,.49,.35,.31,.27,.24][count]);
       crystal.scale.y*=1.65;
     });
+  }
+  /* 画面上のその位置に手（クリスタル）があれば [p,h]、無ければ null。
+     押した時の判定と、タップを数える側（フィードバック）が同じ物差しを使うための入口。 */
+  handAt(clientX,clientY){
+    const r=this.host.getBoundingClientRect();
+    if(!r.width||!r.height||clientX<r.left||clientX>r.right||clientY<r.top||clientY>r.bottom)return null;
+    this.raycaster.setFromCamera(new THREE.Vector2((clientX-r.left)/r.width*2-1,-(clientY-r.top)/r.height*2+1),this.camera);
+    let o=this.raycaster.intersectObjects(this.targets,true)[0]?.object;
+    while(o && !o.userData.hand)o=o.parent;
+    return o?o.userData.hand:null;
   }
   point(p,h,y=.5){return this.handNodes[p][h].root.position.clone().add(vector(0,y,0));}
   setView(view){

@@ -9,13 +9,14 @@
 
    Supabase への通信は絶対に触らない。対戦は常に生の通信でやる。 */
 
-const VERSION = "finst-3d-v6";
+const VERSION = "finst-feedback-v1";
 const SHELL = [
   "./",
   "./index.html",
   "./arena3d.css",
   "./arena3d.js",
   "./game3d.js",
+  "./feedback.js",
   "./effects.html",
   "./effects.js",
   "./assets/vendor/three.module.min.js",
