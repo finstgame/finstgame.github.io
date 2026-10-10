@@ -5,7 +5,7 @@
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
 <title>フィンスト</title>
 <meta name="description" content="相手の両手をアウトにしたら勝ち。リンクを開くだけで遊べる2人対戦のブラウザゲームです。">
-<meta name="theme-color" content="#0D1522">
+<meta name="theme-color" content="#F5F5F7">
 
 <link rel="icon" href="assets/favicon-32.png" sizes="32x32">
 <link rel="icon" href="assets/icon-192.png" sizes="192x192">
@@ -13,7 +13,7 @@
 <link rel="manifest" href="manifest.webmanifest">
 <!-- iOSはmanifestのdisplayを見ないので、ホーム画面から全画面で開くにはこの2行が要る -->
 <meta name="apple-mobile-web-app-capable" content="yes">
-<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+<meta name="apple-mobile-web-app-status-bar-style" content="default">
 <meta name="apple-mobile-web-app-title" content="フィンスト">
 <meta name="mobile-web-app-capable" content="yes">
 <link rel="canonical" href="https://finstgame.github.io/">
@@ -34,14 +34,20 @@
 
 <style>
   :root{
-    --ink:#0D1522;
-    --panel:#16223A;
-    --panel-hi:#1E2E4C;
-    --bone:#F5F0E6;
-    --dim:#66799A;
-    --p0:#33D9BE;
-    --p1:#FF5F7E;
-    --wood:#E3B778;
+    /* 白基調（2026-10）。地は無彩色の白〜グレー。クリーム・生成りは使わない。
+       主役は3D盤で、周りの文字と操作は静かにする（Refero「白いギャラリー」型を参照） */
+    --ink:#F5F5F7;        /* 画面の地 */
+    --panel:#FFFFFF;      /* 盤・パネル */
+    --panel-hi:#FAFAFC;   /* 手番の盤・ホバー */
+    --well:#F2F2F5;       /* 手・入力欄など、一段くぼんだ所 */
+    --line:#E3E3E8;       /* 細い区切り線 */
+    --line-2:#D1D1D6;     /* 点線・強めの線 */
+    --bone:#1D1D1F;       /* 文字 */
+    --dim:#6E6E73;        /* 補助の文字 */
+    --p0:#0FA58C;         /* 白地で読めるよう、プレイヤー色を少し濃くした */
+    --p1:#F0436A;
+    --wood:#E3B778;       /* 金。塗りに使う（暗い文字を乗せる） */
+    --wood-ink:#9A6A1C;   /* 金を文字に使うとき。白地では淡い金は読めない */
     --stick-w: clamp(9px, 2.6vw, 14px);
     /* 横幅だけで寸法を決めると、背の低い端末（SEなど）や、ホーム画面から
        開いてステータスバー・ホームバーに削られた時に入り切らない。
@@ -63,8 +69,6 @@
 
   body{
     background:
-      radial-gradient(120% 80% at 50% 0%, #17253E 0%, transparent 60%),
-      radial-gradient(120% 80% at 50% 100%, #17253E 0%, transparent 60%),
       var(--ink);
     color:var(--bone);
     font-family:"Zen Kaku Gothic New", system-ui, sans-serif;
@@ -104,17 +108,17 @@
     white-space:nowrap;
     flex:0 0 auto;
   }
-  .brand .dot{color:var(--wood);}
+  .brand .dot{color:var(--wood-ink);}
   .brand-img{
     height:clamp(30px, 8.5vw, 40px);
     width:auto; flex:0 0 auto;
     /* 黒い輪郭が濃紺に沈まないよう、わずかに浮かせる */
-    filter:drop-shadow(0 0 1.5px rgba(245,240,230,.55));
+    filter:none;
   }
   .lobby-logo{
     height:auto; width:100%; max-width:280px;
     align-self:center; margin:0 0 2px;
-    filter:drop-shadow(0 0 3px rgba(245,240,230,.5));
+    filter:none;
   }
   .phase-tag{
     font-size:11px;
@@ -180,8 +184,8 @@
 
   .hand{
     flex:1;
-    background:#0F1A2C;
-    border:2px solid #22314E;
+    background:var(--well);
+    border:2px solid var(--line);
     border-radius:12px;
     padding:var(--gap-v) 6px calc(var(--gap-v) - 2px);
     display:flex;
@@ -193,7 +197,7 @@
     transition:transform .18s cubic-bezier(.34,1.56,.64,1), border-color .18s, box-shadow .18s;
   }
   .hand:focus-visible{outline:3px solid var(--wood); outline-offset:2px;}
-  .hand[data-out="true"]{cursor:default; border-style:dashed; border-color:#2A3550;}
+  .hand[data-out="true"]{cursor:default; border-style:dashed; border-color:var(--line-2);}
   .hand.selectable:hover{border-color:var(--c);}
   .hand.selected{
     transform:translateY(-8px);
@@ -231,7 +235,7 @@
   }
   .stick.ghost{
     background:none;
-    border:1.5px dashed #2A3550;
+    border:1.5px dashed var(--line-2);
     box-shadow:none;
     animation:none;
   }
@@ -252,36 +256,36 @@
     line-height:1;
     color:var(--c);
   }
-  .hand[data-out="true"] .count{color:#3B4A69; font-size:14px; padding:4px 0;}
+  .hand[data-out="true"] .count{color:#AEAEB2; font-size:14px; padding:4px 0;}
   /* ---- フィードバック ---- */
   .fb{
     position:fixed; inset:0; z-index:70; display:none;
-    background:rgba(8,13,22,.78);
+    background:rgba(29,29,31,.28);
     padding:calc(16px + env(safe-area-inset-top)) 16px calc(16px + env(safe-area-inset-bottom));
     place-items:center; overflow-y:auto; overscroll-behavior:contain;
   }
   .fb.open{display:grid;}
   .fb-inner{
     width:100%; max-width:420px; display:flex; flex-direction:column; gap:10px;
-    background:var(--panel); border:1px solid rgba(255,255,255,.12);
+    background:var(--panel); border:1px solid var(--line);
     border-radius:16px; padding:18px 16px 16px;
-    box-shadow:0 18px 50px rgba(0,0,0,.5);
+    box-shadow:0 18px 50px rgba(0,0,0,.12);
   }
   .fb-inner h3{font-size:16px; letter-spacing:.06em;}
   .fb-lead{font-size:12px; color:var(--dim); line-height:1.6;}
   .fb textarea{
     width:100%; resize:vertical; min-height:110px;
     font:inherit; font-size:16px;            /* 16px未満だとiOSが勝手に拡大する */
-    color:var(--bone); background:#0F1A2C;
-    border:2px solid #22314E; border-radius:11px; padding:10px 12px;
+    color:var(--bone); background:var(--well);
+    border:2px solid var(--line); border-radius:11px; padding:10px 12px;
   }
   .fb textarea:focus{outline:3px solid var(--wood); outline-offset:1px;}
   .fb-check{display:flex; gap:8px; align-items:flex-start; font-size:12px; line-height:1.5;}
   .fb-check input{margin-top:3px; accent-color:var(--wood);}
   .fb-note{font-size:11px; color:var(--dim);}
   .fb-msg{font-size:12.5px; min-height:1.2em; line-height:1.5;}
-  .fb-msg[data-kind="ok"]{color:#7FC8A9;}
-  .fb-msg[data-kind="ng"]{color:#FF8E8E;}
+  .fb-msg[data-kind="ok"]{color:#1B8A5A;}
+  .fb-msg[data-kind="ng"]{color:#D02F46;}
   .fb-actions{display:flex; gap:8px; justify-content:flex-end;}
   .fb-actions button{padding:10px 18px; border-radius:11px;}
   .fb-actions .primary{min-width:96px;}
@@ -295,7 +299,6 @@
   .pass{
     position:fixed; inset:0; z-index:55; display:none;
     background:
-      radial-gradient(120% 80% at 50% 0%, #17253E 0%, transparent 60%),
       var(--ink);
     padding:24px calc(24px + env(safe-area-inset-left)) calc(24px + env(safe-area-inset-bottom));
     place-items:center; text-align:center;
@@ -316,9 +319,9 @@
     position:fixed; left:50%; transform:translateX(-50%);
     bottom:calc(12px + env(safe-area-inset-bottom));
     z-index:60; display:flex; align-items:center; gap:8px;
-    background:rgba(13,21,34,.96); border:1px solid rgba(255,255,255,.14);
+    background:rgba(255,255,255,.96); border:1px solid var(--line); color:var(--bone);
     border-radius:999px; padding:8px 10px 8px 16px;
-    box-shadow:0 8px 30px rgba(0,0,0,.5);
+    box-shadow:0 8px 30px rgba(0,0,0,.12);
     font-size:13px; max-width:calc(100vw - 24px);
   }
   /* ロビー用のボタン色はこの帯には効かないので、ここで完結させる */
@@ -327,18 +330,18 @@
     white-space:nowrap; border:0; cursor:pointer;
   }
   .upd-bar .primary{background:var(--wood); color:#0D1522;}
-  .upd-bar .ghost{background:transparent; color:rgba(255,255,255,.72); border:1px solid rgba(255,255,255,.22);}
+  .upd-bar .ghost{background:transparent; color:var(--dim); border:1px solid var(--line-2);}
 
   /* ---- レート表示 ---- */
   .rate-card{
     display:flex; align-items:center; justify-content:space-between; gap:10px;
-    background:rgba(255,255,255,.05); border:1px solid rgba(255,255,255,.10);
+    background:var(--panel); border:1px solid var(--line);
     border-radius:12px; padding:10px 14px; margin:0 0 10px;
   }
   .rate-main{display:flex; align-items:baseline; gap:10px;}
   .rate-rank{
     font-size:12px; font-weight:800; letter-spacing:.08em;
-    padding:3px 9px; border-radius:999px;
+    padding:3px 9px; border-radius:999px; white-space:nowrap;
     color:#0D1522; background:var(--wood);
   }
   .rate-rank[data-r="マスター"]{background:#E9C46A;}
@@ -400,8 +403,8 @@
     transform:translateX(-50%);
     font-family:"Dela Gothic One", sans-serif;
     font-size:28px;
-    color:var(--wood);
-    text-shadow:0 2px 0 #0D1522;
+    color:var(--wood-ink);
+    text-shadow:0 0 3px #fff, 0 2px 0 #fff;
     pointer-events:none;
     animation:pop .85s ease-out forwards;
     white-space:nowrap;
@@ -431,8 +434,8 @@
   .card{
     flex:1 1 0;
     min-width:0;
-    background:#0F1A2C;
-    border:2px solid #22314E;
+    background:var(--well);
+    border:2px solid var(--line);
     border-radius:10px;
     padding:8px 7px;
     display:flex;
@@ -479,7 +482,7 @@
     color:var(--dim);
     margin-top:auto;
   }
-  .card[data-timing="defense"] .ctiming{color:var(--wood);}
+  .card[data-timing="defense"] .ctiming{color:var(--wood-ink);}
 
   /* 使用時に割り箸のように折れて消える */
   .card.spent{animation:spend .42s ease-in forwards;}
@@ -494,9 +497,9 @@
     flex:0 0 34px;
     background:
       repeating-linear-gradient(135deg,
-        color-mix(in srgb, var(--wood) 22%, #0F1A2C) 0 6px,
-        #0F1A2C 6px 12px);
-    border-color:color-mix(in srgb, var(--wood) 30%, #22314E);
+        color-mix(in srgb, var(--wood) 32%, #fff) 0 6px,
+        #fff 6px 12px);
+    border-color:color-mix(in srgb, var(--wood) 55%, var(--line));
     cursor:default;
     align-items:center;
     justify-content:center;
@@ -520,7 +523,7 @@
     border-color:#8FD0FF;
     box-shadow:0 0 0 1px rgba(143,208,255,.35), 0 0 14px rgba(143,208,255,.18);
   }
-  .card.seen .ctiming{color:#8FD0FF;}
+  .card.seen .ctiming{color:#2A7FB8;}
 
   .back-count{
     align-self:center;
@@ -561,7 +564,7 @@
     font-size:14px;
     color:var(--bone);
     background:var(--panel);
-    border:2px solid #22314E;
+    border:2px solid var(--line);
     border-radius:11px;
     padding:13px 14px;
     cursor:pointer;
@@ -594,8 +597,8 @@
     font-family:"Dela Gothic One", sans-serif;
     font-size:17px;
     padding:10px 15px;
-    background:#0F1A2C;
-    border:2px solid #22314E;
+    background:var(--well);
+    border:2px solid var(--line);
     border-radius:10px;
     line-height:1.15;
   }
@@ -609,7 +612,7 @@
     margin-top:3px;
   }
   .opt.kill{border-color:var(--wood);}
-  .opt.kill small{color:var(--wood);}
+  .opt.kill small{color:var(--wood-ink);}
 
   #card.panel{border-color:var(--wood);}
   .card-detail{display:flex; flex-direction:column; gap:5px;}
@@ -617,7 +620,7 @@
     font-weight:900;
     font-size:19px;
     letter-spacing:.02em;
-    color:var(--wood);
+    color:var(--wood-ink);
   }
   .card-detail .dtext{font-size:13px; line-height:1.5;}
   .card-detail .dnote{font-size:11.5px; line-height:1.5; color:var(--dim);}
@@ -637,7 +640,7 @@
     line-height:1.4;
   }
   .step-bar.open{display:flex; animation:slideIn .2s ease-out;}
-  .step-bar .sname{font-weight:900; color:var(--wood);}
+  .step-bar .sname{font-weight:900; color:var(--wood-ink);}
   .step-bar button{flex:0 0 auto; padding:8px 12px; font-size:12px; color:var(--dim);}
 
   /* ---------- 応答フェーズ（防御割り込み） ---------- */
@@ -648,7 +651,7 @@
     display:none;
     justify-content:center;
     padding:10px 12px calc(12px + env(safe-area-inset-bottom));
-    background:linear-gradient(180deg, transparent 0%, rgba(8,13,22,.86) 22%);
+    background:linear-gradient(180deg, transparent 0%, rgba(245,245,247,.94) 22%);
   }
   .sheet.open{display:flex; animation:rise .28s cubic-bezier(.34,1.56,.64,1);}
   @keyframes rise{from{opacity:0; transform:translateY(24px);} to{opacity:1; transform:none;}}
@@ -662,7 +665,7 @@
     display:flex;
     flex-direction:column;
     gap:10px;
-    box-shadow:0 -10px 40px rgba(8,13,22,.7);
+    box-shadow:0 -10px 40px rgba(0,0,0,.10);
   }
   .sheet-head{display:flex; align-items:baseline; gap:8px;}
   .sheet-head .who{font-weight:900; font-size:14px; color:var(--resp-c);}
@@ -670,17 +673,17 @@
     margin-left:auto;
     font-family:"Dela Gothic One", sans-serif;
     font-size:20px;
-    color:var(--wood);
+    color:var(--wood-ink);
   }
   .sheet-head .secs.low{color:var(--p1);}
   .sheet-msg{font-size:13px; line-height:1.45;}
-  .sheet-msg b{color:var(--wood);}
+  .sheet-msg b{color:var(--wood-ink);}
 
   /* 残り時間を割り箸が短くなる形で見せる（§6 の新規演出） */
   .timer{
     height:11px;
-    background:#0F1A2C;
-    border:1.5px solid #22314E;
+    background:var(--well);
+    border:1.5px solid var(--line);
     border-radius:6px;
     overflow:hidden;
   }
@@ -711,7 +714,7 @@
   /* winner */
   .win{
     position:fixed; inset:0;
-    background:rgba(8,13,22,.9);
+    background:rgba(245,245,247,.97);
     display:none;
     align-items:center;
     justify-content:center;
@@ -735,7 +738,7 @@
   .recap{
     width:100%; max-width:340px;
     display:flex; flex-direction:column; gap:10px;
-    background:var(--panel); border:2px solid #22314E;
+    background:var(--panel); border:2px solid var(--line);
     border-radius:var(--r); padding:12px;
   }
   .recap-sides{display:flex; flex-direction:column; gap:9px;}
@@ -755,11 +758,11 @@
   .rs-cards{display:flex; flex-wrap:wrap; gap:5px;}
   .rs-card{
     font-size:11.5px; font-weight:700;
-    background:#0F1A2C; border:1.5px solid #2A3550;
+    background:var(--well); border:1.5px solid var(--line-2);
     border-radius:6px; padding:2px 7px;
   }
   .rs-none{font-size:11.5px; color:var(--dim);}
-  .recap-log{border-top:1px solid #22314E; padding-top:10px;}
+  .recap-log{border-top:1px solid var(--line); padding-top:10px;}
   .rl-row{
     display:flex; gap:7px; font-size:11.5px; line-height:1.5;
     color:var(--dim); padding:1px 0;
@@ -776,7 +779,7 @@
     width:28px; height:28px;
     padding:0;
     border-radius:50%;
-    border:2px solid #22314E;
+    border:2px solid var(--line);
     background:var(--panel);
     color:var(--dim);
     font-family:"Dela Gothic One", sans-serif;
@@ -792,7 +795,6 @@
     position:fixed; inset:0;
     /* 読み物なので背面は透かさない */
     background:
-      radial-gradient(120% 60% at 50% 0%, #17253E 0%, transparent 60%),
       var(--ink);
     display:none;
     justify-content:center;
@@ -830,7 +832,7 @@
     content:""; position:absolute; left:0; top:.62em;
     width:6px; height:2px; border-radius:1px; background:var(--wood);
   }
-  .info-body b{color:var(--wood);}
+  .info-body b{color:var(--wood-ink);}
   .info-body .sub2{display:block; color:var(--dim); font-size:11.5px; margin-top:4px;}
   .info-body .em{color:var(--bone); font-weight:700;}
 
@@ -857,7 +859,7 @@
     grid-template-columns:34px 1fr;
     gap:10px;
     background:var(--panel);
-    border:2px solid #22314E;
+    border:2px solid var(--line);
     border-radius:11px;
     padding:10px 11px;
   }
@@ -870,11 +872,11 @@
   .crow .nm{font-weight:900; font-size:14px; letter-spacing:.02em;}
   .crow .tm{
     font-size:9.5px; letter-spacing:.06em; color:var(--dim);
-    border:1.5px solid #2A3550; border-radius:5px;
+    border:1.5px solid var(--line-2); border-radius:5px;
     padding:1px 6px; margin-left:7px; white-space:nowrap;
   }
   /* 防御カードであることはタグの色で示す。枠を光らせると「持っている札」に見える */
-  .crow[data-timing="defense"] .tm{color:var(--wood); border-color:color-mix(in srgb, var(--wood) 45%, transparent);}
+  .crow[data-timing="defense"] .tm{color:var(--wood-ink); border-color:color-mix(in srgb, var(--wood) 45%, transparent);}
   /* 光っているのは手札だけ、という約束にする */
   .crow[data-mine="true"]{
     border-color:var(--bone);
@@ -886,11 +888,11 @@
     font-size:9.5px; font-weight:700; letter-spacing:.06em;
     border-radius:5px; padding:1px 6px; margin-left:7px; white-space:nowrap;
   }
-  .tag-mine{background:var(--bone); color:#0D1522;}
-  .tag-spent{background:#2A3550; color:var(--dim);}
+  .tag-mine{background:var(--bone); color:#fff;}
+  .tag-spent{background:var(--line); color:var(--dim);}
   .cards-lead{font-size:12px; line-height:1.6; color:var(--dim); margin-bottom:12px;}
   .cards-lead b{color:var(--bone);}
-  .crow .tx{font-size:12.5px; line-height:1.55; color:#B9C6DC; margin-top:4px;}
+  .crow .tx{font-size:12.5px; line-height:1.55; color:#48484D; margin-top:4px;}
 
 
   /* ---------- カード使用時の演出 ---------- */
@@ -1074,7 +1076,6 @@
   .lobby{
     position:fixed; inset:0;
     background:
-      radial-gradient(120% 80% at 50% 0%, #17253E 0%, transparent 60%),
       var(--ink);
     display:none;
     /* 中身が画面より高いときにスクロールできるようにする。
@@ -1119,8 +1120,8 @@
     text-align:center;
     text-transform:uppercase;
     color:var(--bone);
-    background:#0F1A2C;
-    border:2px solid #22314E;
+    background:var(--well);
+    border:2px solid var(--line);
     border-radius:11px;
     padding:12px 8px;
   }
@@ -1128,11 +1129,11 @@
   .join-row button{flex:0 0 auto; width:auto;}
   .lobby-note{font-size:11.5px; line-height:1.6; color:var(--dim);}
   .lobby-about{
-    font-size:12.5px; line-height:1.75; color:#B9C6DC;
-    background:var(--panel); border:2px solid #22314E;
+    font-size:12.5px; line-height:1.75; color:#48484D;
+    background:var(--panel); border:2px solid var(--line);
     border-radius:var(--r); padding:12px 13px;
   }
-  .lobby-about b{color:var(--wood);}
+  .lobby-about b{color:var(--wood-ink);}
   .lobby-err{font-size:12.5px; line-height:1.5; color:var(--p1); min-height:1.2em;}
 
   /* 合流待ち：ルームコードを大きく出す */
@@ -1147,7 +1148,7 @@
     font-family:"Dela Gothic One", sans-serif;
     font-size:clamp(34px, 12vw, 46px);
     letter-spacing:.18em;
-    color:var(--wood);
+    color:var(--wood-ink);
     line-height:1.1;
   }
   .code-box .lead{font-size:12px; color:var(--dim); letter-spacing:.1em; margin-bottom:6px;}
@@ -1178,7 +1179,7 @@
     align-items:center; gap:8px;
     font-size:12.5px; color:var(--dim);
     background:var(--panel);
-    border:2px solid #22314E;
+    border:2px solid var(--line);
     border-radius:var(--r);
     padding:12px;
   }
@@ -1201,7 +1202,7 @@
     display:none;
     align-items:center; gap:10px; flex-wrap:wrap;
     font-size:12.5px; line-height:1.5; color:var(--bone);
-    background:var(--panel); border:2px solid #22314E;
+    background:var(--panel); border:2px solid var(--line);
     border-radius:var(--r); padding:11px 12px;
   }
   .queue-bar.open{display:flex;}
@@ -1211,7 +1212,7 @@
     border-color:var(--wood);
     background:color-mix(in srgb, var(--wood) 12%, var(--panel));
   }
-  .queue-bar[data-found="true"] b{color:var(--wood);}
+  .queue-bar[data-found="true"] b{color:var(--wood-ink);}
   .gone-bar span{flex:1; min-width:150px;}
   .gone-bar button{flex:0 0 auto; padding:8px 12px; font-size:12px;}
 
@@ -2532,7 +2533,7 @@ function openCards(){
   const curDeck = (S && S.deck && v !== null) ? S.deck : deckMode;
   const pool = deckIds(curDeck);
   document.getElementById("cardsBody").innerHTML = `
-    ${v !== null ? `<p class="cards-lead">白く光っているのが<b>いまの手札</b>です。</p>` : ""}
+    ${v !== null ? `<p class="cards-lead">黒い枠で囲んであるのが<b>いまの手札</b>です。</p>` : ""}
     <p class="cards-lead">いまは<b>${DECKS[curDeck] ? DECKS[curDeck].name : ""}</b>（${pool.length}種）。範囲の外は灰色で出しています。</p>
     <div class="clist">
       ${Object.keys(CARDS).map(Number).map(id => {
