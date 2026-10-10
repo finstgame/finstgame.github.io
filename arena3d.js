@@ -1,13 +1,22 @@
 import * as THREE from './assets/vendor/three.module.min.js';
 
 const TAU = Math.PI * 2;
-const COLORS = [0x33d9be, 0xff5f7e];
+// 白い盤の上で読める濃さ（画面側の --p0 / --p1 と同じ系統）
+const COLORS = [0x14b89c, 0xf0436a];
+const STAGE = 0xe1e5ec;   // 盤の背景。盤の白い石より一段暗い青みのグレーにして、盤の輪郭を浮かせる（クリーム系は使わない）
+/* 白い背景の上では、淡い色は見えなくなる。色みのある色だけ明るさを抑え、
+   彩度を足す。グレーや白はそのまま（盤の石や線を灰色のまま保つため）。 */
+const ink = color => {
+  const c=new THREE.Color(color), hsl={};c.getHSL(hsl);
+  if(hsl.s<.15)return c.getHex();
+  return new THREE.Color().setHSL(hsl.h,Math.max(hsl.s,.62),Math.min(hsl.l,.5)).getHex();
+};
 const vector = (x=0,y=0,z=0) => new THREE.Vector3(x,y,z);
 const ease = t => 1 - Math.pow(1-t,3);
-const glowMat = (color, opacity=1) => new THREE.MeshBasicMaterial({color,transparent:true,opacity,depthWrite:false,side:THREE.DoubleSide});
+const glowMat = (color, opacity=1) => new THREE.MeshBasicMaterial({color:ink(color),transparent:true,opacity,depthWrite:false,side:THREE.DoubleSide});
 const stoneMat = color => new THREE.MeshStandardMaterial({color,roughness:.82,metalness:.25,flatShading:true});
-// Additive glow: overlapping particles brighten instead of stacking into flat colour.
-const addMat = (color, opacity=1) => new THREE.MeshBasicMaterial({color,transparent:true,opacity,depthWrite:false,side:THREE.DoubleSide,blending:THREE.AdditiveBlending});
+// 以前は加算合成（光を足す）だった。白い盤の上では光が白に溶けて消えるので、普通に重ねる
+const addMat = (color, opacity=1) => new THREE.MeshBasicMaterial({color:ink(color),transparent:true,opacity,depthWrite:false,side:THREE.DoubleSide});
 const easeOutBack = t => 1 + 2.7*Math.pow(t-1,3) + 1.7*Math.pow(t-1,2);
 
 /** Presentation only. Game state and turn deadlines remain owned by the game. */
@@ -20,22 +29,22 @@ export class FinstArena {
     this.motionListener=()=>{this.reduced=this.motion.matches; this.clearEffects(); this.draw();};
     this.motion.addEventListener('change',this.motionListener);
     this.scene=new THREE.Scene();
-    this.scene.background=new THREE.Color(0x09131e);
-    this.scene.fog=new THREE.FogExp2(0x09131e,.035);
+    this.scene.background=new THREE.Color(STAGE);
+    this.scene.fog=new THREE.FogExp2(STAGE,.012);   // 濃いと盤まで背景の色に溶けて輪郭が消える
     this.camera=new THREE.PerspectiveCamera(43,1,.1,100);
     this.camera.position.set(0,11.5,13.5); this.camera.lookAt(0,.2,0);
     this.renderer=new THREE.WebGLRenderer({antialias:true,alpha:false,powerPreference:'low-power'});
     this.renderer.setPixelRatio(Math.min(devicePixelRatio,1.65));
     this.renderer.outputColorSpace=THREE.SRGBColorSpace;
     this.renderer.toneMapping=THREE.ACESFilmicToneMapping;
-    this.renderer.toneMappingExposure=1.35;
+    this.renderer.toneMappingExposure=1.0;   // 白い石が白飛びしないように
     this.renderer.domElement.setAttribute('aria-hidden','true');
     host.prepend(this.renderer.domElement);
     this.lost=e=>{e.preventDefault(); this.setActive(false); this.onFailure();};
     this.renderer.domElement.addEventListener('webglcontextlost',this.lost);
-    this.scene.add(new THREE.HemisphereLight(0xb2d5e7,0x132030,3));
-    const sun=new THREE.DirectionalLight(0xffdec0,4); sun.position.set(-5,9,4);this.scene.add(sun);
-    const rim=new THREE.DirectionalLight(0x77c9ff,3);rim.position.set(4,5,-7);this.scene.add(rim);
+    this.scene.add(new THREE.HemisphereLight(0xffffff,0x9aa3b2,2.2));
+    const sun=new THREE.DirectionalLight(0xffffff,2.6); sun.position.set(-5,9,4);this.scene.add(sun);
+    const rim=new THREE.DirectionalLight(0xdfe6f0,1.2);rim.position.set(4,5,-7);this.scene.add(rim);
     // One permanent light for card effects. Adding/removing lights recompiles every material and stutters.
     this.fxLight=new THREE.PointLight(0xffffff,0,16,1.4);this.fxLight.position.set(0,2,0);this.scene.add(this.fxLight);
     this.shakeAge=0;this.shakeDur=0;this.shakePower=0;
@@ -88,17 +97,17 @@ export class FinstArena {
     const m=this.mesh(new THREE.TorusGeometry(radius,tube,6,64),glowMat(color),parent,vector(0,y,0));m.rotation.x=-Math.PI/2;return m;
   }
   buildWorld(){
-    this.mesh(new THREE.CylinderGeometry(6.1,5.1,.85,12),stoneMat(0x263c49),this.world,vector(0,-.65,0));
-    this.mesh(new THREE.CylinderGeometry(5.95,6.15,.16,96),stoneMat(0x304650),this.world,vector(0,-.16,0));
-    this.mesh(new THREE.CylinderGeometry(5.4,5.5,.12,64),stoneMat(0x1b303b),this.world,vector(0,-.025,0));
-    this.mesh(new THREE.ConeGeometry(4.7,2.6,9),stoneMat(0x142832),this.world,vector(0,-2.3,0)).rotation.z=Math.PI;
-    this.ring(this.world,5.8,0x9b8253,-.055,.024);
-    this.ring(this.world,4.85,0x577b83,.05,.012);
-    this.ring(this.world,1.15,0xa98b52,.075,.028);
-    this.ring(this.world,.92,0x426575,.076,.01);
+    this.mesh(new THREE.CylinderGeometry(6.1,5.1,.85,12),stoneMat(0xc9ced6),this.world,vector(0,-.65,0));
+    this.mesh(new THREE.CylinderGeometry(5.95,6.15,.16,96),stoneMat(0xe2e5ea),this.world,vector(0,-.16,0));
+    this.mesh(new THREE.CylinderGeometry(5.4,5.5,.12,64),stoneMat(0xf6f7f9),this.world,vector(0,-.025,0));
+    this.mesh(new THREE.ConeGeometry(4.7,2.6,9),stoneMat(0xb7bdc7),this.world,vector(0,-2.3,0)).rotation.z=Math.PI;
+    this.ring(this.world,5.8,0xb8893a,-.055,.024);
+    this.ring(this.world,4.85,0xb3bac5,.05,.012);
+    this.ring(this.world,1.15,0xb8893a,.075,.028);
+    this.ring(this.world,.92,0xc3c9d2,.076,.01);
     for(let i=0;i<48;i++){
       const a=i/48*TAU;
-      const m=this.mesh(new THREE.BoxGeometry(i%4===0?.035:.02,.018,i%4===0?.23:.09),glowMat(i%4===0?0xc4a770:0x4d6f7b),this.world,vector(Math.sin(a)*5.55,.045,Math.cos(a)*5.55));m.rotation.y=a;
+      const m=this.mesh(new THREE.BoxGeometry(i%4===0?.035:.02,.018,i%4===0?.23:.09),glowMat(i%4===0?0xb8893a:0xb3bac5),this.world,vector(Math.sin(a)*5.55,.045,Math.cos(a)*5.55));m.rotation.y=a;
     }
     // The crossed chopsticks are the game's original emblem, now engraved in the arena.
     for(const a of [-.6,.6]){
@@ -106,26 +115,27 @@ export class FinstArena {
     }
     for(const z of [-5,5]){
       for(const x of [-3.2,3.2]){
-        this.mesh(new THREE.CylinderGeometry(.19,.34,.85,6),stoneMat(0x3a535e),this.world,vector(x,.25,z));
+        this.mesh(new THREE.CylinderGeometry(.19,.34,.85,6),stoneMat(0xd3d8df),this.world,vector(x,.25,z));
         this.mesh(new THREE.OctahedronGeometry(.18),glowMat(z<0?COLORS[1]:COLORS[0]),this.world,vector(x,.86,z));
       }
     }
     this.shards=[];
     for(let i=0;i<16;i++){
       const a=i*2.39996,r=6.7+(i%3)*.7,y=-1.4+(i%4)*.4;
-      const m=this.mesh(new THREE.IcosahedronGeometry(.14+(i%3)*.11,0),stoneMat(0x31515c),this.world,vector(Math.sin(a)*r,y,Math.cos(a)*r));m.scale.y=2;m.userData.y=y;this.shards.push(m);
+      const m=this.mesh(new THREE.IcosahedronGeometry(.14+(i%3)*.11,0),stoneMat(0xd6dae1),this.world,vector(Math.sin(a)*r,y,Math.cos(a)*r));m.scale.y=2;m.userData.y=y;this.shards.push(m);
     }
     const pts=[];for(let i=0;i<160;i++)pts.push(Math.sin(i*129.1)*17,Math.sin(i*93.7)*8+4,Math.cos(i*67.3)*16);
     const geo=new THREE.BufferGeometry();geo.setAttribute('position',new THREE.Float32BufferAttribute(pts,3));
-    this.dust=new THREE.Points(geo,new THREE.PointsMaterial({color:0x91b5c6,size:.032,transparent:true,opacity:.6}));this.scene.add(this.dust);
+    this.dust=new THREE.Points(geo,new THREE.PointsMaterial({color:0x9aa3b2,size:.032,transparent:true,opacity:.5}));this.scene.add(this.dust);
   }
   makeHands(){
     this.handNodes=[[],[]];
     for(let p=0;p<2;p++)for(let h=0;h<2;h++){
       const root=new THREE.Group();root.userData.hand=[p,h];this.world.add(root);this.targets.push(root);
       // A luminous summoning seal anchors a cluster of floating arcane crystals.
-      this.mesh(new THREE.CylinderGeometry(1.06,1.1,.13,64),stoneMat(0x172c38),root,vector(0,.27,0));
-      const portal=this.mesh(new THREE.CircleGeometry(.94,64),glowMat(0x061820),root,vector(0,.345,0));
+      this.mesh(new THREE.CylinderGeometry(1.06,1.1,.13,64),stoneMat(0xffffff),root,vector(0,.27,0));
+      // 魔法陣の中は、プレイヤー色をうすく溶いた明るい面にする（以前は暗い穴だった）
+      const portal=this.mesh(new THREE.CircleGeometry(.94,64),new THREE.MeshBasicMaterial({color:new THREE.Color(COLORS[p]).lerp(new THREE.Color(0xffffff),.86),transparent:true,depthWrite:false}),root,vector(0,.345,0));
       portal.rotation.x=-Math.PI/2;
       const halo=this.mesh(new THREE.RingGeometry(.56,1.12,64),glowMat(COLORS[p],.12),root,vector(0,.36,0));
       halo.rotation.x=-Math.PI/2;halo.material.toneMapped=false;
@@ -153,10 +163,10 @@ export class FinstArena {
         const crystal=new THREE.Group();relic.add(crystal);
         const geometry=new THREE.OctahedronGeometry(1,0);
         const body=this.mesh(geometry,new THREE.MeshStandardMaterial({
-          color:p===0?0x155f67:0x62233f,emissive:COLORS[p],emissiveIntensity:.42,
+          color:COLORS[p],emissive:COLORS[p],emissiveIntensity:.18,
           roughness:.27,metalness:.35,flatShading:true
         }),crystal);
-        const edges=new THREE.LineSegments(new THREE.EdgesGeometry(geometry),new THREE.LineBasicMaterial({color:new THREE.Color(COLORS[p]).lerp(new THREE.Color(0xffffff),.4),toneMapped:false,transparent:true,opacity:.95}));
+        const edges=new THREE.LineSegments(new THREE.EdgesGeometry(geometry),new THREE.LineBasicMaterial({color:new THREE.Color(COLORS[p]).lerp(new THREE.Color(0x000000),.3),toneMapped:false,transparent:true,opacity:.95}));
         crystal.add(edges);
         crystal.rotation.set(.12,.6+i*1.3,.14);
         crystals.push(crystal);
@@ -286,8 +296,8 @@ export class FinstArena {
         this.flashEl.style.setProperty('--c',hex);
       }
       const k=t<.1?t/.1:Math.pow(1-(t-.1)/.9,2);
-      this.fxLight.intensity=power*9*k;
-      if(!this.reduced&&this.flashEl)this.flashEl.style.opacity=String(Math.min(.62,power/16)*k);
+      this.fxLight.intensity=power*3.2*k;
+      if(!this.reduced&&this.flashEl)this.flashEl.style.opacity=String(Math.min(.38,power/26)*k);
     });
   }
   /* 少し遅れて何かを起こす（着弾の瞬間に揺らす等） */
@@ -316,7 +326,7 @@ export class FinstArena {
     this.timed(duration,g=>{
       g.position.copy(at).setY(0);
       const outer=this.mesh(new THREE.CylinderGeometry(radius,radius*1.15,height,32,1,true),addMat(color,.35),g,vector(0,height/2,0));outer.name='outer';
-      const core=this.mesh(new THREE.CylinderGeometry(radius*.28,radius*.35,height,16,1,true),addMat(0xffffff,.8),g,vector(0,height/2,0));core.name='core';
+      const core=this.mesh(new THREE.CylinderGeometry(radius*.28,radius*.35,height,16,1,true),addMat(color,.85),g,vector(0,height/2,0));core.name='core';
       const base=this.mesh(new THREE.CircleGeometry(radius*2.2,40),addMat(color,.55),g,vector(0,.06,0));base.rotation.x=-Math.PI/2;base.name='base';
     },(g,t)=>g.children.forEach(m=>{
       const drop=Math.min(t/.18,1);              // 空から一気に降りる
@@ -365,7 +375,7 @@ export class FinstArena {
     this.timed(1.25,g=>{
       g.position.copy(at).setY(.55);
       for(let i=0;i<16;i++){
-        const a=i/16*TAU;const link=this.mesh(new THREE.TorusGeometry(.2,.06,8,16),stoneMat(0xc4cde0),g);
+        const a=i/16*TAU;const link=this.mesh(new THREE.TorusGeometry(.2,.06,8,16),stoneMat(0x6f7888),g);
         link.material.emissive=new THREE.Color(color);link.material.emissiveIntensity=1.3;
         link.scale.set(1,.62,1);link.userData.a=a;link.userData.turn=i%2;
       }
@@ -394,14 +404,14 @@ export class FinstArena {
       for(let i=0;i<12;i++){const a=i/12*TAU;const m=this.mesh(new THREE.BoxGeometry(i%3?.05:.09,.02,i%3?.18:.3),addMat(color),g,vector(Math.sin(a)*1.22,.02,Math.cos(a)*1.22));m.rotation.y=a;}
       for(const [len,w,name] of [[.95,.07,'long'],[.6,.1,'short']]){
         const hand=new THREE.Group();hand.name=name;g.add(hand);
-        this.mesh(new THREE.BoxGeometry(w,.04,len),addMat(0xffffff,.9),hand,vector(0,.05,len/2));
+        this.mesh(new THREE.BoxGeometry(w,.04,len),addMat(0x2a2a30,.9),hand,vector(0,.05,len/2));
       }
     },(g,t)=>{
       const spin=ease(t);
       g.getObjectByName('long').rotation.y=-spin*TAU*3;   // 逆回り
       g.getObjectByName('short').rotation.y=-spin*TAU*.6;
       g.rotation.y=spin*.6;g.scale.setScalar(.5+easeOutBack(Math.min(t/.3,1))*.5);
-      g.traverse(m=>{if(m.material)m.material.opacity=(m.material.color.getHex()===0xffffff?.9:1)*(t<.8?1:1-(t-.8)/.2);});
+      g.traverse(m=>{if(m.material)m.material.opacity=(t<.8?1:1-(t-.8)/.2);});
     });
   }
   eye(at,color){
@@ -409,7 +419,7 @@ export class FinstArena {
       g.position.copy(at).add(vector(0,2.4,0));if(this.camera)g.lookAt(this.camera.position);
       const lid=this.mesh(new THREE.TorusGeometry(1,.06,8,64),addMat(color),g);lid.scale.set(1.5,.62,1);lid.name='lid';
       const iris=this.mesh(new THREE.TorusGeometry(.42,.07,8,40),addMat(color),g);iris.name='iris';
-      const pupil=this.mesh(new THREE.CircleGeometry(.24,32),addMat(0xffffff,.95),g);pupil.name='pupil';
+      const pupil=this.mesh(new THREE.CircleGeometry(.24,32),addMat(0x1d1d1f,.95),g);pupil.name='pupil';
       const cone=this.mesh(new THREE.ConeGeometry(2.2,2.4,40,1,true),addMat(color,.16),g,vector(0,0,-1.3));cone.rotation.x=-Math.PI/2;cone.name='cone';
     },(g,t)=>{
       const open=t<.2?ease(t/.2):t>.82?1-(t-.82)/.18:1;
@@ -425,7 +435,7 @@ export class FinstArena {
       g.position.copy(at).add(vector(0,0,toward*1.15));
       const slab=this.mesh(new THREE.BoxGeometry(2.3,1.6,.34),stoneMat(0x5f6f82),g);slab.name='slab';
       slab.material.emissive=new THREE.Color(color);slab.material.emissiveIntensity=.15;slab.material.transparent=true;
-      const edge=new THREE.LineSegments(new THREE.EdgesGeometry(slab.geometry),new THREE.LineBasicMaterial({color,transparent:true,blending:THREE.AdditiveBlending}));edge.name='edge';slab.add(edge);
+      const edge=new THREE.LineSegments(new THREE.EdgesGeometry(slab.geometry),new THREE.LineBasicMaterial({color:ink(color),transparent:true}));edge.name='edge';slab.add(edge);
       for(let i=0;i<5;i++){const rune=this.mesh(new THREE.OctahedronGeometry(.07),addMat(color),slab,vector(-.8+i*.4,.2,toward*-.19));rune.name='rune';}
     },(g,t)=>{
       const rise=easeOutBack(Math.min(t/.28,1)),sink=t>.8?(t-.8)/.2:0;
@@ -455,7 +465,7 @@ export class FinstArena {
     this.timed(1.4,g=>{
       g.position.copy(at).add(vector(0,.9,0));
       if(tex)for(let i=0;i<3;i++){const z=new THREE.Sprite(new THREE.SpriteMaterial({map:tex.clone(),transparent:true,depthWrite:false}));z.userData.i=i;z.material.map.needsUpdate=true;g.add(z);}
-      for(let i=0;i<5;i++){const c=this.mesh(new THREE.SphereGeometry(.36,14,10),glowMat(0xcfd8e6,.22),g,vector(-.7+i*.35,-.35,Math.sin(i)*.15));c.scale.y=.45;c.name='cloud';}
+      for(let i=0;i<5;i++){const c=this.mesh(new THREE.SphereGeometry(.36,14,10),glowMat(0x9aa3b2,.3),g,vector(-.7+i*.35,-.35,Math.sin(i)*.15));c.scale.y=.45;c.name='cloud';}
     },(g,t)=>g.children.forEach(m=>{
       if(m.name==='cloud'){m.position.x+=.002;m.material.opacity=.22*Math.sin(t*Math.PI);return;}
       const lt=Math.max(0,t-m.userData.i*.2);
@@ -475,7 +485,7 @@ export class FinstArena {
     const curve=new THREE.QuadraticBezierCurve3(a,a.clone().lerp(b,.5).add(vector(0,3.2,0)),b);
     this.timed(1.05,g=>{
       const card=this.mesh(new THREE.PlaneGeometry(.55,.78),addMat(color,.95),g);card.name='card';
-      const frame=new THREE.LineSegments(new THREE.EdgesGeometry(card.geometry),new THREE.LineBasicMaterial({color:0xffffff,transparent:true}));card.add(frame);
+      const frame=new THREE.LineSegments(new THREE.EdgesGeometry(card.geometry),new THREE.LineBasicMaterial({color:0x1d1d1f,transparent:true}));card.add(frame);
       for(let i=0;i<10;i++){const m=this.mesh(new THREE.OctahedronGeometry(.06),addMat(color),g);m.userData.i=i;}
     },(g,t)=>{
       const u=ease(t);const card=g.getObjectByName('card');card.position.copy(curve.getPoint(u));card.rotation.set(u*TAU*2,u*TAU,0);
