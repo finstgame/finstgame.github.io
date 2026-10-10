@@ -2465,6 +2465,18 @@ function initPWA(){
     });
   }).catch(() => {});
 
+  /* ホーム画面版のiPhoneは、裏に回しても終了しないので、開き直しても
+     古い版のまま動き続ける。前に出てきたら新しい版を確かめに行く
+     （見つかれば上の updatefound から「更新する」の帯が出る）。
+     確かめるのは30秒に1回まで */
+  let lastCheck = Date.now();
+  document.addEventListener("visibilitychange", () => {
+    if(document.visibilityState !== "visible" || !swReg) return;
+    if(Date.now() - lastCheck < 30000) return;
+    lastCheck = Date.now();
+    swReg.update().catch(() => {});
+  });
+
   /* 交代が済んだら一度だけ読み直す */
   let reloading = false;
   navigator.serviceWorker.addEventListener("controllerchange", () => {
