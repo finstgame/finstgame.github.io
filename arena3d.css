@@ -1,24 +1,24 @@
 /* Finst's wood, jade and rose identity, in a floating stone arena. */
 #arena3d { display:none; }
 .view3d {flex-shrink:0;min-height:36px;padding:6px 10px;font-size:11px;border:1px solid var(--line-2);background:var(--panel);color:var(--bone);border-radius:8px;}
-.view3d[aria-pressed="true"]{border-color:var(--wood);color:var(--wood-ink);}
-/* 白基調の画面。3D盤も白い大理石の闘技場にした（2026-10） */
+.view3d[aria-pressed="true"]{border-color:var(--wood);color:var(--wood-ink);background:linear-gradient(180deg,#2A1F0A,#1A1306);}
+/* 黒基調の画面と、夜の闘技場（2026-10、見本画像に合わせた） */
 .has-3d {background:var(--ink);}
 .has-3d .app {max-width:1040px;gap:10px;}
 .has-3d .top {padding:8px 2px 14px;}
 .has-3d .brand-img {height:38px;}
-.has-3d #arena3d {display:block;position:relative;order:3;height:clamp(310px,49svh,550px);width:100%;overflow:hidden;border:1px solid var(--line);border-radius:18px;background:#E1E5EC;}
+.has-3d #arena3d {display:block;position:relative;order:3;height:clamp(310px,49svh,550px);width:100%;overflow:hidden;border:1px solid var(--line);border-radius:18px;background:#0A0A0C;box-shadow:inset 0 1px 0 rgba(255,255,255,.04);}
 #arena3d canvas {position:absolute;inset:0;display:block;width:100%;height:100%;}
 .arena-overline {position:absolute;top:16px;left:20px;color:var(--wood-ink);font:11px 'Zen Kaku Gothic New',sans-serif;letter-spacing:.23em;pointer-events:none;z-index:1;}
 .arena-caption {position:absolute;top:14px;right:18px;color:var(--dim);font-size:11px;z-index:1;}
 .arena-caption a {color:inherit;text-underline-offset:4px;}
 .has-3d .board {padding:12px 18px;border:1px solid var(--line);background:var(--panel);display:flex;align-items:center;gap:18px;border-radius:12px;}
-.has-3d .board[data-active="true"] {border-color:color-mix(in srgb,var(--c) 70%,var(--line));background:color-mix(in srgb,var(--c) 5%,#fff);}
+.has-3d .board[data-active="true"] {border-color:color-mix(in srgb,var(--c) 70%,var(--line));background:color-mix(in srgb,var(--c) 6%,var(--panel));box-shadow:0 0 18px color-mix(in srgb,var(--c) 14%,transparent);}
 .has-3d .board-head {margin:0;min-width:150px;flex-wrap:wrap;gap:8px;}
 .has-3d .ptag {color:var(--c);}
 .has-3d .board .hands {display:none;}
 .has-3d .board .hand-row {margin:0 0 0 auto;flex:1;justify-content:flex-end;min-height:48px;}
-.has-3d .board .card {max-width:185px;min-height:70px;padding:10px 14px;background:var(--panel);border:1px solid var(--line-2);border-radius:8px;box-shadow:0 2px 0 var(--line);}
+.has-3d .board .card {max-width:185px;min-height:70px;padding:10px 14px;background:var(--raise);border:1px solid var(--line-2);border-radius:8px;box-shadow:var(--raise-shadow);}
 .has-3d .board .card .cname {font-size:17px;}
 .has-3d .board .card .cnum {color:var(--dim);}
 .has-3d .board .card .ctiming {color:var(--dim);font-size:10px;}
@@ -32,25 +32,25 @@
 .has-3d .bar {padding:0 0 10px;}
 .has-3d .bar button {min-height:44px;}
 .has-3d .step-bar,.has-3d .panel {border-color:var(--line-2);background:var(--panel);}
-.has-3d .step-bar.open {position:sticky;bottom:10px;z-index:9;box-shadow:0 10px 35px rgba(0,0,0,.12);}
+.has-3d .step-bar.open {position:sticky;bottom:10px;z-index:9;box-shadow:0 10px 35px rgba(0,0,0,.6);}
 /* 3D表示では、カード名の帯を3D盤の下に出して、盤面の演出を隠さない。
    帯はカードの色のまま（以前の暗い帯は、暗い文字と重なって名前が読めなかった） */
 .has-3d .fx-band {top:28%;padding:13px 22px;}
 /* 暗転は3D盤を中心にかけて、盤上の光を浮かび上がらせる */
-.has-3d .fx-back {background:radial-gradient(ellipse at 50% 32%, color-mix(in srgb, var(--fx-c) 34%, transparent) 0%, transparent 56%), rgba(20,24,32,.24);}
+.has-3d .fx-back {background:radial-gradient(ellipse at 50% 32%, color-mix(in srgb, var(--fx-c) 34%, transparent) 0%, transparent 56%), rgba(5,5,7,.42);}
 .has-3d .fx-name {font-size:clamp(26px,5vw,48px);}
 .arena-labels {position:absolute;inset:0;pointer-events:none;}
-.arena-hand {position:absolute;transform:translate(-50%,-15%);pointer-events:auto;display:grid;grid-template-columns:auto auto;gap:0 8px;align-items:center;min-width:104px;min-height:50px;padding:5px 10px;border:1px solid var(--line-2);background:rgba(255,255,255,.94);color:var(--bone);border-radius:9px;box-shadow:0 4px 12px rgba(0,0,0,.08);font-family:'Zen Kaku Gothic New',system-ui,sans-serif;cursor:pointer;}
+.arena-hand {position:absolute;transform:translate(-50%,-15%);pointer-events:auto;display:grid;grid-template-columns:auto auto;gap:0 8px;align-items:center;min-width:104px;min-height:50px;padding:5px 10px;border:1px solid var(--line-2);background:rgba(18,18,21,.92);color:var(--bone);border-radius:9px;box-shadow:inset 0 1px 0 rgba(255,255,255,.06),0 4px 14px rgba(0,0,0,.6);font-family:'Zen Kaku Gothic New',system-ui,sans-serif;cursor:pointer;}
 .arena-hand span {font-size:11px;color:var(--dim);}
 .arena-hand b {font-family:'Dela Gothic One',sans-serif;font-size:22px;line-height:1.2;color:var(--hand-color);}
 .arena-hand small {grid-column:1/-1;font-size:9px;color:var(--dim);}
 .arena-hand:disabled {cursor:default;opacity:.72;}
 .arena-hand[data-selected="true"] {border:2px solid var(--hand-color);box-shadow:0 0 20px color-mix(in srgb,var(--hand-color) 35%,transparent);}
-.arena-hand[data-target="true"] {border-color:var(--hand-color);background:color-mix(in srgb,var(--hand-color) 10%,#fff);}
-.arena-hand:not(:disabled):hover {background:color-mix(in srgb,var(--hand-color) 8%,#fff);border-color:var(--hand-color);}
+.arena-hand[data-target="true"] {border-color:var(--hand-color);background:color-mix(in srgb,var(--hand-color) 16%,#121215);}
+.arena-hand:not(:disabled):hover {background:color-mix(in srgb,var(--hand-color) 12%,#121215);border-color:var(--hand-color);}
 .arena-hand:focus-visible {outline:3px solid var(--bone);outline-offset:4px;}
 .view3d:focus-visible {outline:3px solid var(--bone);outline-offset:4px;}
-.lobby-3d-link {display:block;padding:13px;text-align:center;color:var(--wood-ink);border:1px solid color-mix(in srgb,var(--wood) 60%,var(--line));border-radius:8px;text-decoration:none;background:var(--panel);}
+.lobby-3d-link {display:block;padding:13px;text-align:center;color:var(--wood-ink);border:1.5px solid var(--wood);border-radius:12px;text-decoration:none;background:linear-gradient(180deg,#1A150B,#110E08);font-weight:700;font-size:clamp(13px,4.2vw,16px);letter-spacing:0;white-space:nowrap;box-shadow:0 0 16px rgba(235,170,44,.12);}
 @media(min-width:850px){
   .has-3d .app {padding:0 36px 20px;}
   .has-3d .board .hand-row[data-empty="true"] {flex:0 0 auto;}
@@ -98,7 +98,7 @@
   background:
     radial-gradient(circle at var(--x,50%) var(--y,50%), var(--c,#fff) 0%, color-mix(in srgb, var(--c,#fff) 40%, transparent) 26%, transparent 62%),
     radial-gradient(circle at 50% 50%, color-mix(in srgb, var(--c,#fff) 22%, transparent), transparent 80%);
-  mix-blend-mode:multiply;   /* 白い盤の上では、光を足すより色で染めるほうが見える */
+  mix-blend-mode:screen;     /* 黒い盤の上では、光を足す */
   border-radius:inherit;
 }
 @media (prefers-reduced-motion: reduce){ .arena-flash{display:none;} }
