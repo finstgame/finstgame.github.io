@@ -43,12 +43,12 @@ test('human cannot operate the CPU turn but the CPU uses the original engine',()
 test('repeated remote snapshots do not replay the same 3D impact',async()=>{
  const t=harness();t.run('S.hit={n:"unique",p:0,h:0,dp:1,dh:1,dmg:1};animateDiff(S.hands);animateDiff(S.hands);');await t.drain();assert.equal(t.hitEvents.length,1);
 });
-test('all 18 cards have a 3D presentation without mutating their input',()=>{
+test('all 20 cards have a 3D presentation without mutating their input',()=>{
  const a=Object.create(FinstArena.prototype),events=[];
  // Every presentation primitive counts; positions are stubbed because this arena has no hands.
  for(const method of ['magic','meteor','shield','beam','burst','shockwave','pillar','vortex','shatter','implode','chains','clock','eye','wall','bubbles','sleepy','cardShard','flash','later','shake'])a[method]=(...args)=>events.push([method,...args]);
  a.point=a.side=()=>({});
- for(let id=1;id<=18;id++){const before=events.length;const detail=Object.freeze({h:1,from:1,to:0});a.card(id,0,detail);assert.ok(events.length>before,`card ${id}`);}
+ for(let id=1;id<=20;id++){const before=events.length;const detail=Object.freeze({h:1,from:1,to:0});a.card(id,0,detail);assert.ok(events.length>before,`card ${id}`);}
 });
 test('impact-created child effects survive the frame and are later disposed',()=>{
  const a=Object.create(FinstArena.prototype);let disposed=0;
@@ -66,7 +66,7 @@ test('offline shell includes every locally imported 3D dependency',()=>{
 });
 test('a new impact remains distinct after a card clears the previous hit',async()=>{
  const t=harness();t.run('S.cards=[[],[]];declareAttack({from:0,fromHand:0,to:1,toHand:0,damage:1,kind:"touch"});');await t.drain();const first=t.state().hit.n;
- t.run('S.hit=null;S.turn=0;busy=false;S.phase="normal";declareAttack({from:0,fromHand:0,to:1,toHand:1,damage:1,kind:"touch"});');await t.drain();assert.notEqual(t.state().hit.n,first);
+ t.run('S.hit=null;S.turn=0;busy=false;S.phase="normal";S.cards=[[],[]];declareAttack({from:0,fromHand:0,to:1,toHand:1,damage:1,kind:"touch"});');await t.drain();assert.notEqual(t.state().hit.n,first);
 });
 test('presentation state flips correctly for the second online seat',()=>{
  const t=harness();t.run('online=true;seat=1;S.turn=1;');assert.equal(t.run('window.getFinst3DView().bottom'),1);
@@ -79,7 +79,7 @@ test('all 3D geometries animate and dispose cleanly, including meteor child effe
   for(const reduced of [false,true]){
    const a=Object.create(FinstArena.prototype);a.scene=new THREE.Scene();a.world=a.scene;a.active=true;a.effects=[];a.reduced=reduced;a.draw=()=>{};
    a.handNodes=[0,1].map(p=>[0,1].map(h=>({root:{position:new THREE.Vector3(h?2:-2,0,p?-2:2)}})));
-   for(let id=1;id<=18;id++){
+   for(let id=1;id<=20;id++){
     a.card(id,0,{h:1,from:1,to:0});
     for(let frame=0;frame<60;frame++)a.updateEffects(.05);
     assert.equal(a.effects.length,0,`card ${id}, reduced ${reduced}`);assert.equal(a.scene.children.length,0);
@@ -124,4 +124,44 @@ test('crystal clusters preserve counts 0–5 and opponent labels follow either v
   }
   a.world.traverse(o=>{o.geometry?.dispose();o.material?.dispose();});
  }finally{globalThis.document=oldDocument;}
+});
+test('update 2.0: an empty hand is dealt one random card from the current deck at the start of that turn',async()=>{
+ const t=harness();t.run('S.deck="easy";S.cards=[[],[]];S.hands=[[1,1],[1,1]];declareAttack({from:0,fromHand:0,to:1,toHand:0,damage:1,kind:"touch"});');await t.drain();
+ const s=t.state();assert.equal(s.turn,1);assert.equal(s.cards[1].length,1);assert.ok(t.run('DECKS.easy.ids').includes(s.cards[1][0]));
+ assert.equal(s.cards[0].length,0,'only the player whose turn starts is dealt');
+ assert.ok(!/「/.test(s.msg),'the shared message does not reveal the dealt card');
+});
+test('update 2.0: modes are easy 10 / hard 20 quick, technical 20 deep',()=>{
+ const t=harness();
+ assert.equal(t.run('deckIds("easy").length'),10);assert.equal(t.run('deckIds("hard").length'),20);assert.equal(t.run('deckIds("tech").length'),20);
+ assert.equal(t.run('DECKS.easy.rule'),'quick');assert.equal(t.run('DECKS.hard.rule'),'quick');assert.equal(t.run('DECKS.tech.rule'),'deep');
+ assert.equal(t.run('RATING_ON'),false);
+});
+test('update 2.0: puppet hands the opponent turn to the user, hides and blocks their cards, then returns',async()=>{
+ const t=harness();t.run('S.cards=[[19],[2,3]];S.hands=[[1,1],[2,1]];useCard(19);');await t.drain();
+ let s=t.state();assert.equal(s.turn,1);assert.deepEqual(s.puppet,{by:0,armed:false});
+ assert.equal(t.run('actor()'),0);assert.equal(t.run('usable(3,1).ok'),false);
+ assert.equal(t.run('enterDefense.toString().includes("puppetOn")'),true);
+ // 操作している側が、相手の手で自分の手を叩く
+ t.run('tap(1,0);tap(0,0);');await t.drain();
+ s=t.state();assert.equal(s.hands[0][0],3);assert.equal(s.turn,0);assert.equal(s.puppet,null);assert.equal(t.run('actor()'),0);
+});
+test('update 2.0: the CPU never moves while the human is puppeting its turn',()=>{
+ const t=harness();t.run('S.cpu=true;S.turn=1;S.puppet={by:0,armed:false};S.sel=null;humanTap(1,0);');assert.equal(t.run('JSON.stringify(S.sel)'),'[1,0]');
+ t.run('S.puppet={by:1,armed:false};S.turn=0;S.sel=null;humanTap(0,0);');assert.equal(t.run('S.sel'),null);
+});
+test('update 2.0: world end leaves exactly one hand with one finger on one side',async()=>{
+ for(let i=0;i<12;i++){
+  const t=harness();t.run('S.cards=[[20],[]];S.hands=[[3,4],[2,2]];useCard(20);');await t.drain();
+  const s=t.state(),d=t.cardEvents[0][2];assert.equal(t.cardEvents[0][0],20);
+  assert.deepEqual(s.hands[d.tp],d.th===0?[1,0]:[0,1]);assert.deepEqual(s.hands[1-d.tp],d.tp===0?[2,2]:[3,4]);assert.equal(s.turn,1);
+ }
+});
+test('update 2.0: the CPU can use puppet and world end, and drives the human hands while puppeting',async()=>{
+ for(let i=0;i<6;i++){
+  const t=harness();t.run('S.cpu=true;S.turn=1;S.cards=[[],[19,20]];S.hands=[[2,3],[1,1]];busy=false;cpuAct();');await t.drain();
+  const s=t.state();assert.ok(s.turn===0||s.used[1].length>0||s.sel,'CPU acted');
+ }
+ const t=harness();t.run('S.cpu=true;S.turn=0;S.puppet={by:1,armed:false};S.cards=[[3],[]];S.hands=[[4,1],[1,1]];busy=false;cpuAct();');await t.drain();
+ const s=t.state();assert.ok(s.turn===1||/プレイヤー1のタッチ/.test(s.msg),'CPU moves the human side');assert.ok(!/プレイヤー2の(左|右)手へ/.test(s.msg)||!/4ダメージ/.test(s.msg),'does not make the human knock out a CPU hand on a tie');assert.deepEqual(s.used[0],[],'puppeted cards stay unused');
 });

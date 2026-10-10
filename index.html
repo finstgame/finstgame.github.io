@@ -837,6 +837,26 @@
   .info-body .em{color:var(--bone); font-weight:700;}
 
   .lobby-links{display:flex; gap:8px;}
+  .lobby-links > button{flex:1 1 0; min-width:0; padding-left:6px; padding-right:6px; white-space:nowrap; font-size:clamp(12px, 3.6vw, 15px); letter-spacing:0;}
+  /* ---- スキンショップ ---- */
+  .skin-list{display:flex; flex-direction:column; gap:10px;}
+  .skin{
+    display:flex; gap:14px; align-items:center;
+    background:var(--panel); border:1px solid var(--line); border-radius:14px; padding:14px;
+  }
+  .skin[data-on="true"]{border:2px solid var(--bone);}
+  .skin-swatch{
+    flex:0 0 64px; height:64px; border-radius:12px; background:#E1E5EC;
+    display:flex; align-items:center; justify-content:center; gap:6px;
+  }
+  .skin-swatch i{width:12px; height:20px; transform:rotate(45deg); border-radius:2px;}
+  .skin-swatch i:nth-child(1){background:var(--p0);}
+  .skin-swatch i:nth-child(2){background:var(--wood);}
+  .skin-swatch i:nth-child(3){background:var(--p1);}
+  .skin-name{font-weight:900; font-size:15px; display:flex; align-items:center; gap:8px;}
+  .skin-tag{font-size:10px; font-weight:700; padding:2px 8px; border-radius:999px; background:var(--bone); color:#fff;}
+  .skin-desc{font-size:12px; color:var(--dim); margin-top:4px; line-height:1.5;}
+  .skin-soon{font-size:12px; color:var(--dim); margin-top:14px;}
   .seg{display:flex; gap:8px;}
   .seg-btn{
     flex:1; display:flex; flex-direction:column; gap:3px;
@@ -1311,6 +1331,16 @@
 </div>
 
 <!-- カード一覧（対戦中でもここから開ける） -->
+<div class="info" id="shop">
+  <div class="info-inner">
+    <div class="info-head">
+      <span class="info-title">スキンショップ</span>
+      <button class="icon-btn" onclick="closeShop()" aria-label="閉じる">×</button>
+    </div>
+    <div class="info-body" id="shopBody"></div>
+  </div>
+</div>
+
 <div class="info" id="cards">
   <div class="info-inner">
     <div class="info-head">
@@ -1421,6 +1451,8 @@ const CARDS = {
   16: {name:"なまけもの", timing:"self",  text:"何もしないで自分の番を終える。動くと不利になる場面で使う"},
   17: {name:"鉄壁",     timing:"defense", text:"3以上のダメージを0にする。2以下の攻撃には使えない"},
   18: {name:"巻き戻し", timing:"self",    text:"自分の指を、前の自分の番を終えた時点の本数に戻す。そのうえで、もう一度自分の番になる"},
+  19: {name:"操り",     timing:"self",    text:"相手の次の番を、自分が操作する。操っている間、相手の特殊技は見えず、使えない"},
+  20: {name:"世界の終わり", timing:"self", text:"自分か相手のどちらかがランダムに、片手だけ・指1本になる"},
 };
 const TIMING_LABEL = {self:"自ターン", attack:"攻撃", defense:"防御割り込み"};
 
@@ -1439,42 +1471,32 @@ const NET = {
 /* 紛らわしい文字（I L O 0 1）を除いた6文字 */
 const CODE_ALPHABET = "ABCDEFGHJKMNPQRSTUVWXYZ23456789";
 /* 同期する項目。sel / pick / step は各自の手元の操作なので送らない */
-const SYNC = ["hands","max","outAt","expanded","shrunk","seen","poison","snaps","mode","deck","cards","used","turn","phase","pending","over","winner","why","msg","hit","play","hist","seal","seq"];
+const SYNC = ["hands","max","outAt","expanded","shrunk","seen","poison","snaps","puppet","mode","deck","cards","used","turn","phase","pending","over","winner","why","msg","hit","play","hist","seal","seq"];
 
 /* アウトの条件。部屋を作った側が決め、相手はそれを受け取る。
    quick … その数以上でアウト（手が落ちやすく、決着が早い）
    deep  … その数ちょうどでアウト。超えたぶんは割った余りに繰り下がる（粘れて読み合いが深い） */
-const MODES = {
-  quick: { name:"クイック", rule:"以上でアウト" },
-  deep:  { name:"ディープ", rule:"ちょうどでアウト" }
-};
-/* 特殊技の種類をしぼる。はじめての人に18種は多すぎるので、
-   まず「何が起きたか目で追える」6種から入れるようにした。
-   easy … 効果が1行で言い切れて、他のカードと絡まないものだけ
-   hard … もとの12種。読み合いが始まる
-   tech … 全部。継続ダメージや情報戦まで入る */
+/* アップデート2.0：ルール（クイック／ディープ）と特殊技の種類を1つのモードにまとめた。
+   easy … 5以上でアウト。効果が1行で言い切れて、他の札と長く絡まない10種
+           （上限が変わる拡張・縮小、連鎖するカウンター、情報戦の透視などは外した）
+   hard … 5以上でアウト。全20種
+   tech … 5ちょうどでアウト（旧ディープ）。全20種 */
 const DECKS = {
-  easy: { name:"イージー", note:"わかりやすい6種",   ids:[1,2,3,4,6,9] },
-  hard: { name:"ハード",   note:"読み合いの12種",     ids:[1,2,3,4,5,6,7,8,9,10,11,12] },
-  tech: { name:"テクニカル", note:"全種類",           ids:null }   // null＝全部
+  easy: { name:"イージー",   rule:"quick", ids:[1,2,3,4,6,8,9,10,12,17] },
+  hard: { name:"ハード",     rule:"quick", ids:null },   // null＝全部
+  tech: { name:"テクニカル", rule:"deep",  ids:null }
 };
 const deckIds = k => DECKS[k] && DECKS[k].ids ? DECKS[k].ids : Object.keys(CARDS).map(Number);
 let deckMode = "hard";
 try{ if(DECKS[localStorage.getItem("finst_deck")]) deckMode = localStorage.getItem("finst_deck"); }catch(e){}
 
-let ruleMode = "quick";
-try{ if(MODES[localStorage.getItem("finst_mode")]) ruleMode = localStorage.getItem("finst_mode"); }catch(e){}
-function setMode(m){
-  if(!MODES[m]) return;
-  ruleMode = m;
-  try{ localStorage.setItem("finst_mode", m); }catch(e){}
-  SFX.tap();
-  showLobby();
-}
+/* ルールはモードから決まる（以前は別に選べた） */
+let ruleMode = DECKS[deckMode].rule;
 
 function setDeck(d){
   if(!DECKS[d]) return;
   deckMode = d;
+  ruleMode = DECKS[d].rule;
   try{ localStorage.setItem("finst_deck", d); }catch(e){}
   SFX.tap();
   showLobby();
@@ -1539,6 +1561,7 @@ function newState(){
        again が残ると次の試合で手番が渡らない）。 */
     doubleQueue: null,
     again: false,          // 巻き戻しの「もう一度自分の番」
+    puppet: null,          // 操り {by, armed}。armed＝使った直後で、まだ相手の番に入っていない
     sel: null, pick: null, step: null,
     seq: 0
   };
@@ -1910,7 +1933,11 @@ const rankOf = r => (RANKS.find(x => r >= x[0]) || RANKS[RANKS.length-1])[1];
 
 /* レート差の許容幅。待つほど広げて、最後は誰とでも当たるようにする。
    最初から広いと格差マッチばかりになり、狭いままだと永久に当たらない。 */
-const BAND = { start: 150, step: 150, max: 4000, every: 8000 };
+/* アップデート2.0：遊ぶ人が増えるまで、レートは一時的に止める。
+   止めている間は、表示も集計もせず、野良はだれとでもすぐ当たる。
+   再開するときはここを true にするだけでよい（DBの仕組みは残してある）。 */
+const RATING_ON = false;
+const BAND = { start: RATING_ON ? 150 : 4000, step: 150, max: 4000, every: 8000 };
 let myRate = null;                      // {rating, games, wins, losses, best, rank_no}
 let queueBand = BAND.start, queueRetry = null, ratedRoom = false, ratingResult = null;
 
@@ -2083,7 +2110,7 @@ async function enterRandom(code, mySeat){
   const { data: m, error } = await sb.from("matches").select("state").eq("room_code", code).maybeSingle();
   if(error || !m) return lobbyError("対戦データが見つかりませんでした");
   online = true; seat = mySeat;
-  ratedRoom = true; ratingResult = null;
+  ratedRoom = RATING_ON; ratingResult = null;
   S = Object.assign({}, m.state, {sel:null, pick:null, step:null, cpu:false});
   NAMES[1] = "プレイヤー2";
   await connect(code);
@@ -2138,7 +2165,7 @@ function showLobby(mode){
 
   el.innerHTML = `
     <img class="brand-img lobby-logo" src="assets/logo.png" alt="FINGER STRATEGY">
-    <div class="tag">3D闘技場・能力カード18種</div>
+    <div class="tag">3D闘技場・能力カード20種</div>
     <a class="lobby-3d-link" href="effects.html">隕石・魔法・カウンターの3D演出を試す ↗</a>
     <div class="lobby-about">
       自分の手で相手の手をタップして本数を押しつけ、<b>相手の両手をアウトにしたら勝ち</b>。
@@ -2147,47 +2174,36 @@ function showLobby(mode){
     <div class="lobby-links">
       <button class="ghost" onclick="openInfo()">遊び方</button>
       <button class="ghost" onclick="openCards()">カード一覧</button>
+      <button class="ghost" onclick="openShop()">スキンショップ</button>
     </div>
 
     <h3>モード</h3>
     <div class="seg">
-      ${Object.keys(MODES).map(k => `
-        <button class="seg-btn" data-on="${ruleMode === k}" onclick="setMode('${k}')">
-          <span class="sname">${MODES[k].name}</span>
-          <small>5${MODES[k].rule}</small>
-        </button>`).join("")}
-    </div>
-    <div class="lobby-note">${ruleMode === "deep"
-      ? "5ちょうどでアウト。超えたぶんは5で割った余りに繰り下がるので、手が粘って試合が長くなります（3本の手に4ダメージ → 7 → 2本）。"
-      : "5以上になった手はそのままアウト。決着が早くつきます。"}</div>
-
-    <h3>特殊技の種類</h3>
-    <div class="seg">
       ${Object.keys(DECKS).map(k => `
         <button class="seg-btn" data-on="${deckMode === k}" onclick="setDeck('${k}')">
           <span class="sname">${DECKS[k].name}</span>
-          <small>${deckIds(k).length}種</small>
+          <small>${deckIds(k).length}種・5${DECKS[k].rule === "deep" ? "ちょうど" : "以上"}</small>
         </button>`).join("")}
     </div>
     <div class="lobby-note">${
-      deckMode === "easy" ? "効果が一目でわかる6種だけ。はじめてならここから。" :
-      deckMode === "hard" ? "12種。拡張・カウンター・封印が入り、読み合いが増えます。" :
-      "全種類。継続ダメージや手札を覗く技まで入ります。"} この${deckIds(deckMode).length}種から3枚が配られます。</div>
+      deckMode === "easy" ? "効果が一目でわかる10種。はじめてならここから。" :
+      deckMode === "hard" ? "全20種。5以上になった手はアウト。" :
+      "全20種。5ちょうどでアウト、超えたぶんは繰り下がるので粘れます（3本の手に4ダメージ → 7 → 2本）。"}手札が無くなると、次の自分の番に1枚配られます。</div>
 
-    <h3>だれかと対戦する</h3>
-    <div id="meBox">${meHTML()}</div>
-    <button class="primary" onclick="randomMatch()">ランダム対戦</button>
-    <div class="lobby-note" id="queueSize">　</div>
-    <div class="lobby-note">近いレートの人から順に当たります。見つからなければ、待つほど広がって最後はだれとでも当たります。レートが動くのはランダム対戦だけです。</div>
-
+    <!-- 人が増えるまでは、友達を誘う導線を先に置く -->
     <h3>友達と対戦する</h3>
-    <button class="ghost" style="width:100%" onclick="createRoom()">部屋を作る</button>
+    <button class="primary" onclick="createRoom()">部屋を作る</button>
     <div class="join-row">
       <input id="codeInput" maxlength="6" placeholder="コード" autocapitalize="characters"
              autocomplete="off" spellcheck="false" aria-label="ルームコード6文字">
       <button onclick="joinRoom(document.getElementById('codeInput').value)">参加</button>
     </div>
     <div class="lobby-err" id="lobbyErr"></div>
+
+    <h3>だれかと対戦する</h3>
+    ${RATING_ON ? `<div id="meBox">${meHTML()}</div>` : ""}
+    <button class="ghost" style="width:100%" onclick="randomMatch()">ランダム対戦</button>
+    <div class="lobby-note" id="queueSize">　</div>
     <h3>ひとりで遊ぶ</h3>
     <button class="ghost" style="width:100%" onclick="startCPU()">CPUと対戦</button>
 
@@ -2203,7 +2219,7 @@ function showLobby(mode){
   const ib = document.getElementById("installBtn");
   if(ib && !standalone() && (installPrompt || /iPhone|iPad|iPod/.test(navigator.userAgent))) ib.hidden = false;
   /* レートは後から届くので、届いたら差し替える */
-  loadMe().then(() => {
+  if(RATING_ON) loadMe().then(() => {
     const box = document.getElementById("meBox");
     if(box) box.innerHTML = meHTML();
   });
@@ -2470,7 +2486,7 @@ function openInfo(){
     <p><span class="em">${modeName()}モード</span> ─ ${S.mode === "deep"
       ? "5ちょうどでアウト。超えたぶんは繰り下がるので粘れます。"
       : "5以上でアウト。決着が早くつきます。"}
-      <span class="sub2">モードは部屋を作るときに選べます。</span></p>
+      <span class="sub2">モードは部屋を作るときに選べます（イージー・ハードは5以上、テクニカルは5ちょうど）。</span></p>
 
     <h4>勝ち負け</h4>
     <p>おたがい <b>左手1本 / 右手1本</b> ではじまり、
@@ -2495,7 +2511,7 @@ function openInfo(){
 
     <h4>能力カード</h4>
     <ul>
-      <li>モードで決めた範囲から3枚。<b>各1回きり</b>で補充なし</li>
+      <li>モードで決めた範囲から3枚。<b>各1回きり</b>。手札が無くなると、次の自分の番に1枚だけランダムに配られる</li>
       <li><b>相手の手札は見えない</b>（枚数だけ分かる）</li>
       <li>「防御割り込み」は<b>相手に攻撃されたとき</b>に使う。15秒で自動パス</li>
       <li><b>拡張</b>は<b>選んだ片手だけ</b>、5でアウトが6でアウトになる。その手は5本まで持てる</li>
@@ -2554,13 +2570,39 @@ function openCards(){
         </div>`;
       }).join("")}
     </div>
-    <p class="cards-note">この${pool.length}種から3枚が配られます。各1回きりで補充なし。
+    <p class="cards-note">この${pool.length}種から3枚が配られます。各1回きり。手札が無くなると、次の自分の番に1枚だけ配られます。
        「防御割り込み」は相手に攻撃されたときに使い、15秒で自動パスになります。</p>`;
   const el = document.getElementById("cards");
   el.classList.add("open");
   el.scrollTop = 0;
 }
 function closeCards(){ document.getElementById("cards").classList.remove("open"); }
+
+/* スキンショップ。いまは標準の見た目だけ。スキンは今後ここに足していく
+   （SKINS に1行足せば並ぶ。選んだものは finst_skin に残す） */
+const SKINS = [
+  { id:"standard", name:"スタンダード", desc:"白い大理石の闘技場と、緑とピンクのクリスタル。" }
+];
+function openShop(){
+  let cur = "standard";
+  try{ cur = localStorage.getItem("finst_skin") || "standard"; }catch(e){}
+  document.getElementById("shopBody").innerHTML = `
+    <div class="skin-list">
+      ${SKINS.map(k => `
+        <div class="skin" data-on="${k.id === cur}">
+          <div class="skin-swatch" aria-hidden="true"><i></i><i></i><i></i></div>
+          <div class="skin-text">
+            <div class="skin-name">${k.name}${k.id === cur ? `<span class="skin-tag">使用中</span>` : ""}</div>
+            <div class="skin-desc">${k.desc}</div>
+          </div>
+        </div>`).join("")}
+    </div>
+    <p class="skin-soon">新しいスキンは今後ここに追加します。</p>`;
+  const el = document.getElementById("shop");
+  el.classList.add("open");
+  el.scrollTop = 0;
+}
+function closeShop(){ document.getElementById("shop").classList.remove("open"); }
 
 /* ================= 終わり方 ================= */
 function closeConfirm(){ document.getElementById("confirm").classList.remove("open"); }
@@ -2609,9 +2651,12 @@ function toLobby(){
 }
 
 /* ---- 手番・応答の権利 ---- */
-const myTurn   = () => !online || S.turn === seat;
-const humanTurn = () => myTurn() && (!S.cpu || S.turn === 0);
-const humanTap = (p,h) => { if(!S.cpu || (S.step ? S.step.who === 0 : S.turn === 0)) tap(p,h); };
+/* いま操作している人。ふだんは手番の人。操りの番だけは、手番は相手でも操作するのは使った人 */
+const actor    = () => (S && S.puppet && !S.puppet.armed) ? S.puppet.by : S.turn;
+const puppetOn = () => !!(S && S.puppet && !S.puppet.armed);
+const myTurn   = () => !online || actor() === seat;
+const humanTurn = () => myTurn() && (!S.cpu || actor() === 0);
+const humanTap = (p,h) => { if(!S.cpu || (S.step ? S.step.who === 0 : actor() === 0)) tap(p,h); };
 const iRespond = () => !online || (S.pending && S.pending.responder === seat);
 
 function restart(){
@@ -3211,7 +3256,13 @@ const SFX = (() => {
               chord(t+.02, [N.C4, N.G4], .45, .06, "square", .5);
               hiss(t, .2, .07, 200, 1400, .35); },
     18:t => { run(t, [N.C6, N.G5, N.E5, N.C5], .06, .3, .05, "sine", .55);               // 巻き戻し
-              tone(N.C4, t+.05, .4, .07, "triangle", .45, N.G4); }
+              tone(N.C4, t+.05, .4, .07, "triangle", .45, N.G4); },
+    19:t => { tone(N.E5, t, .5, .05, "sine", .5, N.E4);                                  // 操り
+              tone(N.B4, t+.1, .5, .05, "sine", .5, N.B4*0.5);
+              run(t+.2, [N.G4, N.E4, N.C4], .09, .3, .04, "triangle", .5); },
+    20:t => { tone(70, t, 1.1, .14, "sawtooth", .3, 35);                                  // 世界の終わり
+              hiss(t, .9, .1, 2000, 200, .35);
+              knock(80, t+.8, .4, .32, .5); knock(60, t+.95, .5, .3, .5); }
   };
 
   const api = {
@@ -3286,7 +3337,7 @@ const norm = (v, p, h) => S.mode === "deep"
 
 /* 画面に出す言い方（例: 「5以上でアウト」「5ちょうどでアウト」）*/
 const outDesc = (p, h) => S.outAt[p][h] + (S.mode === "deep" ? "ちょうどでアウト" : "以上でアウト");
-const modeName = () => (MODES[S.mode] || MODES.quick).name;
+const modeName = () => (DECKS[S.deck] || DECKS[deckMode]).name;
 
 /* ================= 描画 ================= */
 /* 自分の盤が下。オンラインでは席によって上下が入れ替わる */
@@ -3350,7 +3401,7 @@ function render(){
 
 /* この手が今クリックできるか（通常攻撃の的か、カードの入力対象か） */
 function isTargetable(p,h){
-  if(S.cpu && (S.step ? S.step.who !== 0 : S.turn !== 0)) return false;
+  if(S.cpu && (S.step ? S.step.who !== 0 : actor() !== 0)) return false;
   if(S.over || busy || !alive(p,h)) return false;
   if(S.step){
     if(S.step.need === "ownHand")   return p === S.step.who;
@@ -3402,7 +3453,7 @@ function cardsHTML(p){
   /* 1台を回して遊ぶときだけ「手番側が表向き」。CPU戦は相手の札を見せない */
   const faceUp = online ? (p === seat)
                : S.cpu ? (p === 0)
-               : (p === S.turn && !S.over);
+               : (p === actor() && !S.over);
   if(!faceUp){
     /* 透視で覗いた札だけは表を見せる（見たのは自分なので、自分の画面にだけ出る） */
     const v = viewerIdx();
@@ -3437,6 +3488,7 @@ function cardBtnHTML(id, i, p){
 /* 自ターンにそのカードを切れるか */
 function usable(id, p){
   const c = CARDS[id];
+  if(puppetOn()) return {ok:false, why:"操られている"};
   if(c.timing === "defense") return {ok:false, why:"防御割り込み"};
   if(online && (p !== seat || S.turn !== seat)) return {ok:false, why:"相手の番"};
   if(S.phase !== "normal" || S.step) return {ok:false, why:TIMING_LABEL[c.timing]};
@@ -3510,7 +3562,7 @@ function declareAttack(atk){
 function enterDefense(){
   const p = S.pending;
   p.responder = p.to;
-  const hasDefense = S.cards[p.to].some(id => CARDS[id].timing === "defense");
+  const hasDefense = !puppetOn() && S.cards[p.to].some(id => CARDS[id].timing === "defense");
   if(!hasDefense){
     /* 1台でCPUと遊ぶ時だけ、攻撃が宣言されたことを一拍見せてから解決する。
        「防御カードを持っていない時だけ待つ」と、待ち時間そのものが
@@ -3840,7 +3892,7 @@ function pickCard(id){
   document.getElementById("cardDetail").innerHTML = `
     <div class="dname">${c.name}</div>
     <div class="dtext">${c.text}</div>
-    <div class="dnote">${TIMING_LABEL[c.timing]} ／ 1回だけ使えます。使うと手札から消えます（補充なし）</div>`;
+    <div class="dnote">${TIMING_LABEL[c.timing]} ／ 1回だけ使えます。使うと手札から消えます</div>`;
   document.getElementById("cardUse").onclick = () => useCard(id);
   const panel = document.getElementById("card");
   panel.classList.add("open");
@@ -3891,6 +3943,8 @@ function useCard(id){
                 text:`<span class="sname">ポイズン</span> 攻撃する自分の手を選んでください`});
     case 16: return runIdle(me);
     case 18: return runRewind(me);
+    case 19: return runPuppet(me);
+    case 20: return runWorldEnd(me);
   }
 }
 
@@ -3959,6 +4013,37 @@ async function runRewind(me){
   S.again = true;                       // この番は渡さない
   endTurn(`<b>${NAMES[me]}</b>の巻き戻し。`
     + `<span class="sub">${before} → ${S.hands[me].join("/")} に戻した</span>`);
+}
+
+/* ---- 19 操り：相手の次の番を、自分が操作する ----
+   使った番はここで終わり、相手の番に入ったところで操作が始まる（endTurn で切り替える）。
+   操られている間はだれも特殊技を使えず、相手の札も見えない。
+   操った攻撃は自分の手に向かうので、防御割り込みは挟まない。 */
+async function runPuppet(me){
+  busy = true;
+  await spend(me, 19, null);
+  S.puppet = { by: me, armed: true };
+  render();
+  endTurn(`<b>${NAMES[me]}</b>の操り。`);
+}
+
+/* ---- 20 世界の終わり：自分か相手のどちらかが、片手だけ・指1本になる ----
+   どちらになるか、どちらの手が残るかは、使った瞬間にランダムに決める。
+   落ちた側の手の拡張・縮小・毒は、ふだんアウトになった時と同じく消える。 */
+async function runWorldEnd(me){
+  busy = true;
+  const tp = Math.random() < .5 ? me : foe(me);
+  const th = Math.random() < .5 ? 0 : 1;
+  await spend(me, 20, { tp, th });
+  const before = S.hands[tp].join("/");
+  S.hands[tp] = th === 0 ? [1,0] : [0,1];
+  /* 残った手の上限が1より小さいことはない（縮小の下限は1）ので、1本はそのまま置ける */
+  render();
+  await poof(tp, th, "1", "");
+  render();
+  if(checkDeath(me)) return;
+  endTurn(`<b>${NAMES[me]}</b>の世界の終わり。`
+    + `<span class="sub">${NAMES[tp]}が ${before} → ${S.hands[tp].join("/")}（${hn(th)}手だけ・1本）になった</span>`);
 }
 
 /* 前の自分の番を終えた時点の指。無ければ null */
@@ -4309,7 +4394,7 @@ function cpuTick(){
     cpuTimer = setTimeout(cpuDefend, CPU_DELAY.defend);
     return;
   }
-  if(S.phase === "normal" && S.turn === 1 && !busy){
+  if(S.phase === "normal" && actor() === 1 && !busy){
     cpuTimer = setTimeout(cpuAct, CPU_DELAY.think);
   }
 }
@@ -4463,7 +4548,9 @@ function cpuAttackPlans(){
 }
 
 function cpuAct(){
-  if(!S.cpu || S.over || online || S.phase !== "normal" || S.turn !== 1 || busy) return;
+  if(!S.cpu || S.over || online || S.phase !== "normal" || actor() !== 1 || busy) return;
+  /* CPUが人を操っている番。人の手を、人にとって一番まずい形に動かす */
+  if(puppetOn() && S.turn === 0) return cpuPuppetMove();
   const me = 1, opp = 0;
   const plans = cpuAttackPlans();
 
@@ -4550,6 +4637,26 @@ function cpuAct(){
       if(simBest(alt, me, me, CPU_PLY) > cpuSearch().score) return cpuUseCard(18);
     }
   }
+  /* 操り：相手の次の番を自分が選べる。相手に一番まずい手を指させたあとの形と、
+     普通に動いた形を同じ深さで比べる */
+  if(has(19)){
+    const st = snapForSearch();
+    let best = -Infinity;
+    simMoves(st, opp).forEach(mv => { best = Math.max(best, simBest(simApply(st, opp, mv), me, me, CPU_PLY)); });
+    if(best > cpuSearch().score) return cpuUseCard(19);
+  }
+  /* 世界の終わり：自分と相手のどちらに当たるかは半々。4通りの結果の平均で判断する。
+     負けている時ほど、賭ける価値が出る */
+  if(has(20)){
+    const st = snapForSearch();
+    let sum = 0;
+    for(const tp of [0,1]) for(const th of [0,1]){
+      const alt = { h:[st.h[0].slice(), st.h[1].slice()], o:st.o, mx:st.mx, mode:st.mode };
+      alt.h[tp] = th === 0 ? [1,0] : [0,1];
+      sum += simBest(alt, opp, me, CPU_PLY);
+    }
+    if(sum / 4 > cpuSearch().score) return cpuUseCard(20);
+  }
   /* 略奪：相手の札を減らすのは、相手が2枚以上持っているときに効く */
   if(has(14) && S.cards[opp].length >= 2) return cpuUseCard(14);
   /* ポイズン：この一撃で落とせなくても、じわじわ効かせられる */
@@ -4593,6 +4700,25 @@ function cpuAct(){
 }
 
 /* ---- 実際の操作（人と同じ入口を叩く）---- */
+/* CPUが人の番を操る。人の手から選べる攻撃・分配のうち、
+   そのあとCPUの番になった時に一番CPUに有利な形を選ぶ */
+function cpuPuppetMove(){
+  const st = snapForSearch();
+  let best = null, bestScore = -Infinity;
+  simMoves(st, 0).forEach(mv => {
+    const after = simApply(st, 0, mv);
+    /* 読みの点が並んだら、指した直後の形がCPUに良い方を選ぶ（自分の手を落とさせない） */
+    const sc = simBest(after, 1, 1, CPU_PLY) + simEval(after, 1) * .001;
+    if(sc > bestScore){ bestScore = sc; best = mv; }
+  });
+  if(!best) return;
+  if(best.kind === "atk"){
+    S.sel = [0, best.mh]; render();
+    cpuTimer = setTimeout(() => tap(1, best.oh), CPU_DELAY.step);
+  } else {
+    applySplit(best.a, best.b);
+  }
+}
 function cpuAttack(p){
   S.sel = [1, p.mh]; render();
   cpuTimer = setTimeout(() => tap(0, p.oh), CPU_DELAY.step);
@@ -4710,7 +4836,9 @@ const FX = {
   15: {c:"#7FD36B", label:"毒",         kind:"beam"},
   16: {c:"#9AA7BD", label:"なにもしない", kind:"ring"},
   17: {c:"#B8C4D8", label:"鉄壁",       kind:"shield"},
-  18: {c:"#9B8CFF", label:"巻き戻す",   kind:"rise"}
+  18: {c:"#9B8CFF", label:"巻き戻す",   kind:"rise"},
+  19: {c:"#D36BFF", label:"操る",       kind:"beam"},
+  20: {c:"#FF4D4D", label:"世界の終わり", kind:"ring"}
 };
 
 function reduceMotion(){
@@ -4861,6 +4989,9 @@ function playCardFx(id, p, detail){
     case 16: fxRing(p, 0, c); setTimeout(() => fxRing(p, 1, c), 260); break;        // なまけもの
     case 17: fxShield(p, detail && detail.h != null ? detail.h : 0, c); break;      // 鉄壁
     case 18: [0,1].forEach(h => fxRise(p, h, c)); break;                            // 巻き戻し
+    case 19: [0,1].forEach((h,i) => setTimeout(() => fxBeam(p, h, opp, h, c), i*140)); break; // 操り
+    case 20: { const tp = detail && detail.tp != null ? detail.tp : opp;             // 世界の終わり
+               fxRing(tp, 0, c); setTimeout(() => fxRing(tp, 1, c), 160); break; }
   }
 }
 
@@ -4920,7 +5051,8 @@ function closeAllPanels(){
 function endTurn(msg){
   SFX.duck(false);
   handMods(S);
-  const actor = S.turn;
+  const actor = S.turn;           // この番の持ち主（操られていても、番の持ち主はこちら）
+  const puppetEnded = puppetOn(); // 操られた番がいま終わるところか
 
   /* 巻き戻しを使った時だけ、番を渡さずにもう一度同じ人が指す。
      番が終わっていないので、封印も毒も進めない。 */
@@ -4952,7 +5084,16 @@ function endTurn(msg){
     /* 自分の番を終えた時点の指を控えておく。巻き戻しが戻る先はここ */
     S.snaps[actor] = (S.snaps[actor] || []).concat([S.hands[actor].slice()]).slice(-3);
     S.turn = foe(S.turn);
-    S.msg = msg + `<span class="sub">次は ${NAMES[S.turn]}</span>`;
+    /* 操り：使った番が終わったら、相手の番に入って操作を始める。
+       操られた番が終わったら、元に戻す（次は操った人の番になる） */
+    if(S.puppet){
+      if(S.puppet.armed) S.puppet.armed = false;
+      else S.puppet = null;
+    }
+    msg += dealIfEmpty(S.turn);
+    S.msg = msg + (puppetOn()
+      ? `<span class="sub">${NAMES[S.turn]}の番を、${NAMES[S.puppet.by]}が操作します</span>`
+      : `<span class="sub">次は ${NAMES[S.turn]}</span>`);
   }
   closeAllPanels();
   stopTimer(); clearTimeout(watchdog);
@@ -4960,9 +5101,23 @@ function endTurn(msg){
   say(S.msg);
   busy = false;
   commit();
-  /* 1台版で手番が移ったら、次の人に渡るまで盤面を隠す */
-  if(!again && needPassScreen()) showPass(S.turn, "この人の手札が出ます。<br>前の人は見ないでください。");
+  /* 1台版で手番が移ったら、次の人に渡るまで盤面を隠す。
+     操りの出入りでは操作する人が変わらないので、端末も渡さない */
+  if(!again && !puppetOn() && !puppetEnded && needPassScreen())
+    showPass(S.turn, "この人の手札が出ます。<br>前の人は見ないでください。");
   cpuTick();
+}
+
+/* アップデート2.0：手札が無くなったら、次の自分の番に1枚だけランダムに配る（ずっと続く）。
+   札を使い切ったあとも読み合いが続き、同じ形をくり返すだけの試合になりにくい。
+   どの札が来たかは本人にしか見せない（共有する文言には名前を出さない） */
+function dealIfEmpty(p){
+  if(S.cards[p].length) return "";
+  const pool = deckIds(S.deck || deckMode);
+  const got = pool[Math.floor(Math.random() * pool.length)];
+  S.cards[p] = [got];
+  note(p, "特殊技が1枚配られた");
+  return `<span class="sub">${NAMES[p]}の手札が無いので、特殊技が1枚配られた</span>`;
 }
 
 /* ポイズン：ターンの終わりに1ダメージ。攻撃と同じ扱いなので、

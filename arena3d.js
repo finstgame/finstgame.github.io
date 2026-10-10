@@ -652,6 +652,20 @@ export class FinstArena {
         const c=0x9b8cff;
         this.clock(this.side(p,0),c);for(let n=0;n<2;n++)this.magic(p,n,c,'rewind');
         this.vortex(this.side(p),c,{inward:true,count:30,radius:2.6,duration:1.2});this.flash(this.side(p),c,9,1.2);break;}
+      case 19:{ // 操り：自分の手から相手の両手へ糸が伸び、相手の陣に紋が開く
+        const c=0xd36bff;
+        for(let n=0;n<2;n++){this.beam([p,n],[opp,n],c,true);this.magic(opp,n,c,'seal');this.pillar(at(opp,n),c,{radius:.22,height:4,delay:.3});}
+        this.vortex(this.side(opp),c,{inward:true,count:28,radius:2.4,duration:1});
+        this.later(.45,()=>this.shake(.15,.3));this.flash(this.side(opp),c,9,1.1);break;}
+      case 20:{ // 世界の終わり：盤の中央が割れ、当たった側の片手が砕け散る
+        const tp=detail?.tp??opp, th=detail?.th??0, c=0xff4d4d;
+        this.implode(center,c);this.vortex(center,0x5a1020,{inward:true,count:44,radius:4,duration:.9});
+        this.later(.8,()=>{
+          this.shockwave(center,c,2.2);this.shockwave(center,0xffb454,1.6,.12);
+          this.shatter(at(tp,1-th,.6),c,{count:24,speed:1.3,stone:true});this.dissolveHand(tp,1-th);
+          this.shockwave(at(tp,th),c,.7,.2);this.shake(.6,.6);
+        });
+        this.flash(center,c,12,1.4);break;}
     }
   }
   hit(hit){
