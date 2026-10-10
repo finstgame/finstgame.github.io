@@ -165,3 +165,34 @@ test('update 2.0: the CPU can use puppet and world end, and drives the human han
  const t=harness();t.run('S.cpu=true;S.turn=0;S.puppet={by:1,armed:false};S.cards=[[3],[]];S.hands=[[4,1],[1,1]];busy=false;cpuAct();');await t.drain();
  const s=t.state();assert.ok(s.turn===1||/プレイヤー1のタッチ/.test(s.msg),'CPU moves the human side');assert.ok(!/プレイヤー2の(左|右)手へ/.test(s.msg)||!/4ダメージ/.test(s.msg),'does not make the human knock out a CPU hand on a tie');assert.deepEqual(s.used[0],[],'puppeted cards stay unused');
 });
+test('skins: CPU wins unlock pieces, each seat shows its own skin, and a match counts once',()=>{
+ const t=harness();
+ t.run('globalThis.__s=new Map();localStorage.getItem=k=>globalThis.__s.get(k)??null;localStorage.setItem=(k,v)=>globalThis.__s.set(k,String(v));');
+ assert.equal(t.run('mySkin()'),'standard');
+ t.run('localStorage.setItem("finst_skin","flame")');assert.equal(t.run('mySkin()'),'standard','locked skin falls back');
+ t.run('S.cpu=true;online=false;localStorage.setItem("finst_cpu_wins","2");');
+ assert.equal(t.run('countCpuWin(0).map(k=>k.id).join()'),'flame','the 3rd win unlocks flame');
+ assert.equal(t.run('countCpuWin(0).length'),0);assert.equal(t.run('cpuWins()'),3,'the same match is counted once');
+ t.run('S.counted=false');assert.equal(t.run('countCpuWin(1).length'),0);assert.equal(t.run('cpuWins()'),3,'a CPU win is not counted');
+ assert.equal(t.run('mySkin()'),'flame');
+ assert.equal(t.run('JSON.stringify(window.getFinst3DView().skins)'),'["flame","standard"]');
+ t.run('online=true;seat=1;S.skins=["star","standard"];');
+ assert.equal(t.run('JSON.stringify(window.getFinst3DView().skins)'),'["star","flame"]');
+ assert.ok(t.run('SYNC.includes("skins")'));
+});
+test('skins: every piece shape builds, re-skins, and disposes cleanly',async()=>{
+ const THREE=await import('../assets/vendor/three.module.min.js');
+ const {PIECE_IDS}=await import('../arena3d.js');
+ const oldDocument=globalThis.document;globalThis.document={hidden:false,createElement:()=>({className:'',style:{setProperty(){}},dataset:{},addEventListener(){},setAttribute(){}})};
+ try{
+  const a=Object.create(FinstArena.prototype);a.world=new THREE.Group();a.targets=[];a.labelHost={append(){}};a.draw=()=>{};a.onPick=()=>{};a.makeHands();
+  for(const id of PIECE_IDS){
+   a.setView({hands:[[3,1],[2,4]],max:[[4,4],[4,4]],bottom:0,names:['A','B'],turn:0,skins:[id,'standard']});
+   const n=a.handNodes[0][0];assert.equal(n.skin,id);assert.equal(n.crystals.length,5);assert.equal(n.crystals.filter(c=>c.visible).length,3);
+   for(const c of n.crystals)c.traverse(o=>{if(o.geometry){o.geometry.computeBoundingBox();assert.ok(Number.isFinite(o.geometry.boundingBox.max.x),id);}});
+   assert.equal(a.handNodes[1][0].skin,'standard');
+  }
+  a.setView({hands:[[1,1],[1,1]],max:[[4,4],[4,4]],bottom:0,names:['A','B'],turn:0,skins:['nope','standard']});
+  assert.equal(a.handNodes[0][0].skin,'standard','unknown skin falls back');
+ }finally{globalThis.document=oldDocument;}
+});

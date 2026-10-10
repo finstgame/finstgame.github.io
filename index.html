@@ -855,17 +855,24 @@
     display:flex; gap:14px; align-items:center;
     background:var(--panel); border:1px solid var(--line); border-radius:14px; padding:14px;
   }
-  .skin[data-on="true"]{border:2px solid var(--bone);}
-  .skin-swatch{
-    flex:0 0 64px; height:64px; border-radius:12px; background:#0A0A0C; border:1px solid var(--line-2);
-    display:flex; align-items:center; justify-content:center; gap:6px;
+  .skin[data-on="true"]{border:2px solid var(--wood); background:linear-gradient(180deg,#1E1709,#141008);}
+  .skin-icon{
+    flex:0 0 60px; height:60px; padding:9px; border-radius:12px;
+    background:#0A0A0C; border:1px solid var(--line-2);
+    fill:var(--p0); filter:drop-shadow(0 0 6px color-mix(in srgb, var(--p0) 55%, transparent));
   }
-  .skin-swatch i{width:12px; height:20px; transform:rotate(45deg); border-radius:2px;}
-  .skin-swatch i:nth-child(1){background:var(--p0);}
-  .skin-swatch i:nth-child(2){background:var(--wood);}
-  .skin-swatch i:nth-child(3){background:var(--p1);}
+  .skin-text{flex:1; min-width:0;}
+  .skin[data-locked="true"] .skin-icon{fill:#3A3A41; filter:none;}
+  .skin[data-locked="true"] .skin-name{color:var(--dim);}
+  .skin-use{flex:0 0 auto; padding:9px 16px; font-size:13px;}
+  .skin-lock{flex:0 0 auto; font-size:11px; font-weight:700; color:var(--dim); border:1px solid var(--line-2); border-radius:999px; padding:3px 9px;}
+  .skin-lead{font-size:13px; line-height:1.7; margin-bottom:12px;}
+  .skin-lead .sub2{display:block; color:var(--dim); font-size:12px; margin-top:4px;}
+  .skin-lead b{color:var(--wood-ink);}
+  .wr-unlock{font-weight:900; color:var(--wood-ink); font-size:15px; line-height:1.5; text-align:center;}
+  .wr-unlock .wr-sub{display:block; font-weight:500; color:var(--dim); font-size:12px;}
   .skin-name{font-weight:900; font-size:15px; display:flex; align-items:center; gap:8px;}
-  .skin-tag{font-size:10px; font-weight:700; padding:2px 8px; border-radius:999px; background:var(--bone); color:var(--ink);}
+  .skin-tag{font-size:10px; font-weight:700; padding:2px 8px; border-radius:999px; background:var(--wood); color:#1A1206;}
   .skin-desc{font-size:12px; color:var(--dim); margin-top:4px; line-height:1.5;}
   .skin-soon{font-size:12px; color:var(--dim); margin-top:14px;}
   .seg{display:flex; gap:8px;}
@@ -1496,7 +1503,7 @@ const NET = {
 /* 紛らわしい文字（I L O 0 1）を除いた6文字 */
 const CODE_ALPHABET = "ABCDEFGHJKMNPQRSTUVWXYZ23456789";
 /* 同期する項目。sel / pick / step は各自の手元の操作なので送らない */
-const SYNC = ["hands","max","outAt","expanded","shrunk","seen","poison","snaps","puppet","mode","deck","cards","used","turn","phase","pending","over","winner","why","msg","hit","play","hist","seal","seq"];
+const SYNC = ["hands","max","outAt","expanded","shrunk","seen","poison","snaps","puppet","skins","mode","deck","cards","used","turn","phase","pending","over","winner","why","msg","hit","play","hist","seal","seq"];
 
 /* アウトの条件。部屋を作った側が決め、相手はそれを受け取る。
    quick … その数以上でアウト（手が落ちやすく、決着が早い）
@@ -1586,7 +1593,9 @@ function newState(){
        again が残ると次の試合で手番が渡らない）。 */
     doubleQueue: null,
     again: false,          // 巻き戻しの「もう一度自分の番」
-    puppet: null,          // 操り {by, armed}。armed＝使った直後で、まだ相手の番に入っていない
+    puppet: null,
+    skins: ["standard","standard"],   // 各席の駒のスキン。オンラインでは自分の席だけ自分で書く
+    counted: false,        // CPU戦の勝ちをもう数えたか（同じ試合を2回数えない）          // 操り {by, armed}。armed＝使った直後で、まだ相手の番に入っていない
     sel: null, pick: null, step: null,
     seq: 0
   };
@@ -1603,6 +1612,7 @@ function openingMsg(){
 function commit(){
   if(!online || applying || !room || !sb) return Promise.resolve();
   S.seq = (S.seq || 0) + 1;
+  if(seat === 0 || seat === 1){ S.skins = (S.skins || ["standard","standard"]).slice(); S.skins[seat] = mySkin(); }
   const snap = snapshot();
   return sb.from("matches")
     .update({ state: snap,
@@ -2615,26 +2625,56 @@ function openCards(){
 }
 function closeCards(){ document.getElementById("cards").classList.remove("open"); }
 
-/* スキンショップ。いまは標準の見た目だけ。スキンは今後ここに足していく
-   （SKINS に1行足せば並ぶ。選んだものは finst_skin に残す） */
+/* スキンショップ。スキンは自分の駒（3D盤で本数を表す駒）の形を変える。
+   色はプレイヤー色のままなので、どちらの駒かは変わらず一目でわかる。
+   CPU戦で勝った数（finst_cpu_wins）で解放し、選んだものは finst_skin に残す。
+   形そのものは arena3d.js の PIECES。ここに1行足して、向こうに形を足せば並ぶ */
 const SKINS = [
-  { id:"standard", name:"スタンダード", desc:"白い大理石の闘技場と、緑とピンクのクリスタル。" }
+  { id:"standard", name:"クリスタル", wins:0,  desc:"いつもの縦長の結晶。",
+    icon:`<path d="M24 4 34 24 24 44 14 24Z"/>` },
+  { id:"flame",    name:"炎",         wins:3,  desc:"ゆらめく炎の駒。ふちが橙に光る。",
+    icon:`<path d="M24 4c3 8 12 13 12 25a12 12 0 0 1-24 0c0-7 4-10 6-15 1 4 3 6 5 6-1-6 0-11 1-16Z"/>` },
+  { id:"star",     name:"星",         wins:7,  desc:"金のふちの星。くるくる回る。",
+    icon:`<path d="M24 4l5.9 12.6 13.6 1.6-10 9.3 2.6 13.5L24 34.3 11.9 41l2.6-13.5-10-9.3 13.6-1.6Z"/>` },
+  { id:"sword",    name:"剣",         wins:15, desc:"切っ先を上に掲げた剣。",
+    icon:`<path transform="rotate(180 24 24)" d="M24 46l-3-6V20h-7v-3h7v-6h-2V8h10v3h-2v6h7v3h-7v20Z"/>` }
 ];
+const cpuWins = () => { let v = 0; try{ v = +localStorage.getItem("finst_cpu_wins") || 0; }catch(e){} return v; };
+const skinOpen = k => cpuWins() >= k.wins;
+function mySkin(){
+  let id = "standard";
+  try{ id = localStorage.getItem("finst_skin") || "standard"; }catch(e){}
+  const k = SKINS.find(x => x.id === id);
+  return k && skinOpen(k) ? id : "standard";
+}
+function useSkin(id){
+  const k = SKINS.find(x => x.id === id);
+  if(!k || !skinOpen(k)) return;
+  try{ localStorage.setItem("finst_skin", id); }catch(e){}
+  SFX.tap();
+  openShop();
+  window.finst3D?.sync();
+}
 function openShop(){
-  let cur = "standard";
-  try{ cur = localStorage.getItem("finst_skin") || "standard"; }catch(e){}
+  const cur = mySkin(), wins = cpuWins();
   document.getElementById("shopBody").innerHTML = `
+    <p class="skin-lead">自分の駒の形を変えられます。色は今までどおりなので、どちらの駒かは変わりません。
+      <span class="sub2">CPU戦で勝つと解放されます。いま <b>${wins}勝</b>。</span></p>
     <div class="skin-list">
-      ${SKINS.map(k => `
-        <div class="skin" data-on="${k.id === cur}">
-          <div class="skin-swatch" aria-hidden="true"><i></i><i></i><i></i></div>
+      ${SKINS.map(k => {
+        const open = skinOpen(k), on = k.id === cur;
+        return `
+        <div class="skin" data-on="${on}" data-locked="${!open}">
+          <svg class="skin-icon" viewBox="0 0 48 48" aria-hidden="true">${k.icon}</svg>
           <div class="skin-text">
-            <div class="skin-name">${k.name}${k.id === cur ? `<span class="skin-tag">使用中</span>` : ""}</div>
-            <div class="skin-desc">${k.desc}</div>
+            <div class="skin-name">${k.name}${on ? `<span class="skin-tag">使用中</span>` : ""}</div>
+            <div class="skin-desc">${open ? k.desc : `CPU戦で${k.wins}勝すると解放（あと${k.wins - wins}勝）`}</div>
           </div>
-        </div>`).join("")}
+          ${open && !on ? `<button class="skin-use" onclick="useSkin('${k.id}')">使う</button>` : ""}
+          ${!open ? `<span class="skin-lock">未解放</span>` : ""}
+        </div>`;}).join("")}
     </div>
-    <p class="skin-soon">新しいスキンは今後ここに追加します。</p>`;
+    <p class="skin-soon">スキンは3D表示のときに見えます。オンライン対戦では相手にも見えます。</p>`;
   const el = document.getElementById("shop");
   el.classList.add("open");
   el.scrollTop = 0;
@@ -5309,6 +5349,15 @@ function recapHTML(){
     </div>` : ""}`;
 }
 
+/* CPUに勝ったら勝ち数を1つ足す。同じ試合は1回だけ。新しく解放したスキンを返す */
+function countCpuWin(w){
+  if(!S.cpu || online || w !== 0 || S.counted) return [];
+  S.counted = true;
+  const before = cpuWins();
+  try{ localStorage.setItem("finst_cpu_wins", String(before + 1)); }catch(e){}
+  if(cpuWins() <= before) return [];          // 保存できない環境では解放もしない
+  return SKINS.filter(k => k.wins === before + 1);
+}
 function showWin(){
   const w = S.winner;
   if(w === null || w === undefined) return;
@@ -5327,6 +5376,12 @@ function showWin(){
   wr.classList.remove("open"); wr.innerHTML = "";
   if(ratingResult) showRatingDelta();
   else if(online && ratedRoom) wr.innerHTML = `<div class="wr-sub">レートを計算しています…</div>`;
+  const got = countCpuWin(w);
+  if(got.length){
+    wr.innerHTML = `<div class="wr-unlock">スキン「${got.map(k => k.name).join("・")}」を解放しました
+      <span class="wr-sub">ロビーのスキンショップで選べます（CPU戦 ${cpuWins()}勝）</span></div>`;
+    wr.classList.add("open");
+  }
   document.getElementById("winRecap").innerHTML = recapHTML();
   document.getElementById("pass").classList.remove("open");   // 決着したら覆いは外す
   passAfter = null;
@@ -5340,6 +5395,10 @@ function showWin(){
 window.finstPick = (p,h) => humanTap(p,h);
 window.getFinst3DView = () => !S ? null : ({
   hands:S.hands, max:S.max, bottom:bottomP(), names:NAMES, turn:S.turn,
+  /* 自分の席は手元の選択をそのまま使う（相手の書き込みで一瞬戻らないように）。
+     CPU戦と1台版では、自分（プレイヤー1）だけがスキンを着る */
+  skins: online ? [0,1].map(p => p === seat ? mySkin() : ((S.skins && S.skins[p]) || "standard"))
+                : [mySkin(), "standard"],
   mode:S.mode, selected:S.sel, disabled:busy || S.over,
   clickable:[0,1].map(p=>[0,1].map(h=>handEl(p,h)?.tabIndex===0)),
   targets:[0,1].map(p=>[0,1].map(h=>handEl(p,h)?.classList.contains("target")))

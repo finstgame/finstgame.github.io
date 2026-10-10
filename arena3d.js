@@ -3,6 +3,31 @@ import * as THREE from './assets/vendor/three.module.min.js';
 const TAU = Math.PI * 2;
 const COLORS = [0x19e0ad, 0xff3d6e];   // 黒い盤で強く光る緑とピンク（見本画像に合わせた）
 const vector = (x=0,y=0,z=0) => new THREE.Vector3(x,y,z);
+
+/* ---- 駒のスキン ----
+   本数を表す駒の形。色はプレイヤー色のまま（どちらの駒か一目でわかるように）にして、
+   形と、ふちの差し色だけを変える。stretch は縦の伸ばし方（標準のクリスタルは縦長）。
+   形はどれも、幅がおよそ -1〜1 に収まる大きさで作る（並べ方を共通にするため）。 */
+function shapeGeo(points, depth){
+  const shape=new THREE.Shape();
+  points.forEach(([x,y],i)=>i?shape.lineTo(x,y):shape.moveTo(x,y));
+  shape.closePath();
+  const g=new THREE.ExtrudeGeometry(shape,{depth,bevelEnabled:true,bevelThickness:.05,bevelSize:.05,bevelSegments:1});
+  g.center();
+  return g;
+}
+const PIECES = {
+  standard: { stretch:2.1, accent:0xffffff, geo:()=>new THREE.OctahedronGeometry(1,0) },
+  flame: { stretch:1.15, size:1.3, accent:0xffb454, flicker:true, geo:()=>new THREE.LatheGeometry(
+    [[0,-1],[.55,-.86],[.82,-.45],[.78,0],[.58,.5],[.34,1],[.14,1.42],[0,1.8]].map(([x,y])=>new THREE.Vector2(x,y)),7) },
+  star: { stretch:1, size:1.25, accent:0xffd76a, geo:()=>shapeGeo(Array.from({length:10},(_,i)=>{
+    const a=Math.PI/2+i*Math.PI/5, r=i%2?.46:1.15; return [Math.cos(a)*r,Math.sin(a)*r];
+  }),.32) },
+  sword: { stretch:1, size:1.45, accent:0xdfe6f0, geo:()=>shapeGeo([
+    [0,-1.75],[.26,-1.3],[.26,.42],[.72,.42],[.72,.7],[.15,.7],[.15,1.2],[.28,1.3],[.28,1.52],[-.28,1.52],[-.28,1.3],[-.15,1.2],[-.15,.7],[-.72,.7],[-.72,.42],[-.26,.42],[-.26,-1.3]
+  ].map(([x,y])=>[x,-y]),.22) }   // 切っ先を上に掲げる
+};
+export const PIECE_IDS = Object.keys(PIECES);
 const ease = t => 1 - Math.pow(1-t,3);
 const glowMat = (color, opacity=1) => new THREE.MeshBasicMaterial({color,transparent:true,opacity,depthWrite:false,side:THREE.DoubleSide});
 const stoneMat = color => new THREE.MeshStandardMaterial({color,roughness:.82,metalness:.25,flatShading:true});
@@ -74,6 +99,8 @@ export class FinstArena {
             if(!crystal.visible)return;
             crystal.position.y=crystal.userData.restY+Math.sin(this.time*1.3+i*1.7)*.065;
             crystal.rotation.y+=dt*.22;
+            // 炎はゆらぐ
+            if(crystal.userData.flicker)crystal.scale.y=crystal.userData.baseY*(1+Math.sin(this.time*9+i*2.1)*.07);
           });
         });
       }
@@ -149,24 +176,36 @@ export class FinstArena {
       runes.add(new THREE.LineSegments(runeGeo,new THREE.LineBasicMaterial({color:COLORS[p],transparent:true,opacity:1,toneMapped:false})));
       const relic=new THREE.Group();root.add(relic);
       const crystals=[];
-      for(let i=0;i<5;i++){
-        const crystal=new THREE.Group();relic.add(crystal);
-        const geometry=new THREE.OctahedronGeometry(1,0);
-        const body=this.mesh(geometry,new THREE.MeshStandardMaterial({
-          color:p===0?0x0a9a74:0xc0103e,emissive:COLORS[p],emissiveIntensity:.38,
-          roughness:.35,metalness:.2,flatShading:true
-        }),crystal);
-        body.material.toneMapped=false;   // トーンマップで白っぽく褪せないようにする（見本の濃い緑とピンク）
-        const edges=new THREE.LineSegments(new THREE.EdgesGeometry(geometry),new THREE.LineBasicMaterial({color:new THREE.Color(COLORS[p]).lerp(new THREE.Color(0xffffff),.25),toneMapped:false,transparent:true,opacity:.9}));
-        crystal.add(edges);
-        crystal.rotation.set(.12,.6+i*1.3,.14);
-        crystals.push(crystal);
-      }
+      for(let i=0;i<5;i++)crystals.push(this.makePiece(relic,p,i,'standard'));
       const button=document.createElement('button');button.className='arena-hand';button.style.setProperty('--hand-color',`#${COLORS[p].toString(16)}`);
       button.addEventListener('click',()=>this.onPick(p,h));this.labelHost.append(button);
-      this.handNodes[p][h]={root,relic,crystals,aura,runes,button,selected:false,target:false};
+      this.handNodes[p][h]={root,relic,crystals,aura,runes,button,skin:'standard',selected:false,target:false};
     }
     this.setView({hands:[[1,1],[1,1]],max:[[4,4],[4,4]],bottom:0,names:['あなた','相手'],turn:0});
+  }
+  /* 駒を1つ作る。形はスキンで変わり、色はプレイヤー色のまま */
+  makePiece(relic,p,i,skin){
+    const kind=PIECES[skin]||PIECES.standard;
+    const crystal=new THREE.Group();relic.add(crystal);
+    const geometry=kind.geo();
+    const body=this.mesh(geometry,new THREE.MeshStandardMaterial({
+      color:p===0?0x0a9a74:0xc0103e,emissive:COLORS[p],emissiveIntensity:kind.flicker?.6:.38,
+      roughness:.35,metalness:.2,flatShading:true
+    }),crystal);
+    body.material.toneMapped=false;   // トーンマップで白っぽく褪せないようにする（見本の濃い緑とピンク）
+    const edges=new THREE.LineSegments(new THREE.EdgesGeometry(geometry,25),new THREE.LineBasicMaterial({color:new THREE.Color(COLORS[p]).lerp(new THREE.Color(kind.accent),kind.accent===0xffffff?.25:.55),toneMapped:false,transparent:true,opacity:.9}));
+    crystal.add(edges);
+    crystal.rotation.set(skin==='standard'?.12:0,.6+i*1.3,skin==='standard'?.14:0);
+    crystal.userData.stretch=kind.stretch;crystal.userData.size=kind.size||1;crystal.userData.flicker=!!kind.flicker;
+    return crystal;
+  }
+  /* その人の駒をスキンの形に作り直す。同じスキンなら何もしない */
+  setSkin(n,p,skin){
+    if(!PIECES[skin])skin='standard';
+    if(n.skin===skin)return;
+    n.crystals.forEach(c=>{n.relic.remove(c);c.traverse(o=>{o.geometry?.dispose();o.material?.dispose();});});
+    n.crystals=Array.from({length:5},(_,i)=>this.makePiece(n.relic,p,i,skin));
+    n.skin=skin;n.crystalCount=undefined;   // 並べ直させる
   }
   setCrystalCount(n,count){
     n.relic.visible=count>0;
@@ -180,8 +219,9 @@ export class FinstArena {
       const y=count===1?1.35:1.18+Math.cos((i-(count-1)/2)*.65)*.14;
       crystal.position.set(x,y,0);
       crystal.userData.restY=y;
-      crystal.scale.setScalar([.24,.49,.35,.31,.27,.24][count]);
-      crystal.scale.y*=2.1;   // 見本のような縦長の結晶
+      crystal.scale.setScalar([.24,.49,.35,.31,.27,.24][count]*(crystal.userData.size||1));
+      crystal.scale.y*=crystal.userData.stretch||2.1;   // 標準は見本のような縦長の結晶
+      crystal.userData.baseY=crystal.scale.y;
     });
   }
   /* 画面上のその位置に手（クリスタル）があれば [p,h]、無ければ null。
@@ -201,6 +241,7 @@ export class FinstArena {
       const near=p===view.bottom;
       n.root.position.set(h===0?-2.25:2.25,0,near?2.45:-2.45);
       const count=view.hands[p][h];
+      this.setSkin(n,p,view.skins?.[p]);
       this.setCrystalCount(n,count);
       n.button.dataset.side=near?'near':'far';
       n.selected=!!view.selected && view.selected[0]===p && view.selected[1]===h;
