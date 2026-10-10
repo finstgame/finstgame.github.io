@@ -302,7 +302,7 @@
     position:fixed; inset:0; z-index:55; display:none;
     background:
       var(--ink);
-    padding:24px calc(24px + env(safe-area-inset-left)) calc(24px + env(safe-area-inset-bottom));
+    padding:calc(24px + env(safe-area-inset-top)) calc(24px + env(safe-area-inset-right)) calc(24px + env(safe-area-inset-bottom)) calc(24px + env(safe-area-inset-left));
     place-items:center; text-align:center;
   }
   .pass.open{display:grid;}
@@ -722,7 +722,7 @@
     justify-content:center;
     flex-direction:column;
     gap:18px;
-    padding:24px calc(24px + env(safe-area-inset-bottom));
+    padding:calc(24px + env(safe-area-inset-top)) 24px calc(24px + env(safe-area-inset-bottom));
     overflow-y:auto;
     overscroll-behavior:contain;
     z-index:30;
@@ -800,15 +800,24 @@
       var(--ink);
     display:none;
     justify-content:center;
+    /* 中身の高さまで伸ばす。既定の stretch だと中身が画面の高さで切られ、
+       見出し（×ボタン）の貼りつきがそこで外れて一緒に流れていってしまう */
+    align-items:flex-start;
     z-index:50;
-    padding:12px;
+    /* ホーム画面版はステータスバーの下まで描くので、見出しと×をその下に置く */
+    padding:calc(12px + env(safe-area-inset-top)) 12px calc(12px + env(safe-area-inset-bottom));
     overflow-y:auto;
     overscroll-behavior:contain;
+  }
+  /* スクロールした本文がステータスバーの裏に透けないよう、上端をふさぐ */
+  .info::before{
+    content:""; position:fixed; left:0; right:0; top:0; z-index:2;
+    height:calc(12px + env(safe-area-inset-top)); background:var(--ink);
   }
   .info.open{display:flex; animation:flash-in .25s ease-out;}
   .info-inner{width:100%; max-width:460px; padding-bottom:28px;}
   .info-head{
-    position:sticky; top:0; z-index:1;
+    position:sticky; top:0; z-index:1;   /* 貼りつく位置は親の上の余白（ノッチぶん込み）の下端 */
     display:flex; align-items:center;
     padding:12px 2px;
     background:var(--ink);
@@ -902,8 +911,8 @@
   .crow[data-timing="defense"] .tm{color:var(--wood-ink); border-color:color-mix(in srgb, var(--wood) 45%, transparent);}
   /* 光っているのは手札だけ、という約束にする */
   .crow[data-mine="true"]{
-    border-color:var(--bone);
-    background:color-mix(in srgb, var(--bone) 7%, var(--panel));
+    border-color:var(--wood);
+    background:color-mix(in srgb, var(--wood) 9%, var(--panel));
   }
   .crow[data-spent="true"]{opacity:.5;}
   .crow-head{display:flex; align-items:center; flex-wrap:wrap; gap:0;}
@@ -1106,7 +1115,7 @@
     overflow-y:auto;
     overscroll-behavior:contain;
     -webkit-overflow-scrolling:touch;
-    padding:20px 20px calc(28px + env(safe-area-inset-bottom));
+    padding:calc(20px + env(safe-area-inset-top)) 20px calc(28px + env(safe-area-inset-bottom));
     z-index:40;
   }
   /* minmax(0,1fr) が要。ただの grid だと列が中身の最小幅まで広がってしまい、
@@ -2565,7 +2574,7 @@ function openCards(){
   const curDeck = (S && S.deck && v !== null) ? S.deck : deckMode;
   const pool = deckIds(curDeck);
   document.getElementById("cardsBody").innerHTML = `
-    ${v !== null ? `<p class="cards-lead">黒い枠で囲んであるのが<b>いまの手札</b>です。</p>` : ""}
+    ${v !== null ? `<p class="cards-lead">金の枠で囲んであるのが<b>いまの手札</b>です。</p>` : ""}
     <p class="cards-lead">いまは<b>${DECKS[curDeck] ? DECKS[curDeck].name : ""}</b>（${pool.length}種）。範囲の外は灰色で出しています。</p>
     <div class="clist">
       ${Object.keys(CARDS).map(Number).map(id => {
