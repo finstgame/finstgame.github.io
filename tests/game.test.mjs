@@ -168,14 +168,15 @@ test('update 2.0: the CPU can use puppet and world end, and drives the human han
 test('skins: CPU wins unlock pieces, each seat shows its own skin, and a match counts once',()=>{
  const t=harness();
  t.run('globalThis.__s=new Map();localStorage.getItem=k=>globalThis.__s.get(k)??null;localStorage.setItem=(k,v)=>globalThis.__s.set(k,String(v));');
- assert.equal(t.run('mySkin()'),'standard');
- t.run('localStorage.setItem("finst_skin","flame")');assert.equal(t.run('mySkin()'),'standard','locked skin falls back');
+ assert.equal(t.run('mySkin()'),'finger','the finger is the default piece');
+ t.run('localStorage.setItem("finst_skin","standard")');assert.equal(t.run('mySkin()'),'finger','the crystal is locked until the first win');
+ t.run('localStorage.setItem("finst_skin","flame")');assert.equal(t.run('mySkin()'),'finger','locked skin falls back');
  t.run('S.cpu=true;online=false;localStorage.setItem("finst_cpu_wins","2");');
  assert.equal(t.run('countCpuWin(0).map(k=>k.id).join()'),'flame','the 3rd win unlocks flame');
  assert.equal(t.run('countCpuWin(0).length'),0);assert.equal(t.run('cpuWins()'),3,'the same match is counted once');
  t.run('S.counted=false');assert.equal(t.run('countCpuWin(1).length'),0);assert.equal(t.run('cpuWins()'),3,'a CPU win is not counted');
  assert.equal(t.run('mySkin()'),'flame');
- assert.equal(t.run('JSON.stringify(window.getFinst3DView().skins)'),'["flame","standard"]');
+ assert.equal(t.run('JSON.stringify(window.getFinst3DView().skins)'),'["flame","finger"]');
  t.run('online=true;seat=1;S.skins=["star","standard"];');
  assert.equal(t.run('JSON.stringify(window.getFinst3DView().skins)'),'["star","flame"]');
  assert.ok(t.run('SYNC.includes("skins")'));

@@ -1513,6 +1513,8 @@ const SYNC = ["game","dry","hands","max","outAt","expanded","shrunk","seen","poi
            （上限が変わる拡張・縮小、連鎖するカウンター、情報戦の透視などは外した）
    hard … 5以上でアウト。全20種
    tech … 5ちょうどでアウト（旧ディープ）。全20種 */
+/* 駒の標準のスキン。何も選んでいない人と、CPUの駒はこれ（id は arena3d.js の PIECES） */
+const DEFAULT_SKIN = "finger";
 const DECKS = {
   easy: { name:"イージー",   rule:"quick", ids:[1,2,3,4,6,8,9,10,12,17] },
   hard: { name:"ハード",     rule:"quick", ids:null },   // null＝全部
@@ -1599,7 +1601,7 @@ function newState(deck){
     doubleQueue: null,
     again: false,          // 巻き戻しの「もう一度自分の番」
     puppet: null,
-    skins: ["standard","standard"],   // 各席の駒のスキン。オンラインでは自分の席だけ自分で書く
+    skins: [DEFAULT_SKIN, DEFAULT_SKIN],   // 各席の駒のスキン。オンラインでは自分の席だけ自分で書く
     counted: false,        // CPU戦の勝ちをもう数えたか（同じ試合を2回数えない）          // 操り {by, armed}。armed＝使った直後で、まだ相手の番に入っていない
     sel: null, pick: null, step: null,
     seq: 0
@@ -1617,7 +1619,7 @@ function openingMsg(){
 function commit(){
   if(!online || applying || !room || !sb) return Promise.resolve();
   S.seq = (S.seq || 0) + 1;
-  if(seat === 0 || seat === 1){ S.skins = (S.skins || ["standard","standard"]).slice(); S.skins[seat] = mySkin(); }
+  if(seat === 0 || seat === 1){ S.skins = (S.skins || [DEFAULT_SKIN, DEFAULT_SKIN]).slice(); S.skins[seat] = mySkin(); }
   const snap = snapshot();
   return sb.from("matches")
     .update({ state: snap,
@@ -2640,10 +2642,10 @@ function closeCards(){ document.getElementById("cards").classList.remove("open")
    CPU戦で勝った数（finst_cpu_wins）で解放し、選んだものは finst_skin に残す。
    形そのものは arena3d.js の PIECES。ここに1行足して、向こうに形を足せば並ぶ */
 const SKINS = [
-  { id:"standard", name:"クリスタル", wins:0,   desc:"いつもの縦長の結晶。",
-    icon:`<path d="M24 4 34 24 24 44 14 24Z"/>` },
-  { id:"finger",   name:"指",         wins:1,   desc:"このゲームの主役。まるい指が並ぶ。",
+  { id:"finger",   name:"指",         wins:0,   desc:"このゲームの主役。まるい指が並ぶ。",
     icon:`<rect x="16" y="4" width="16" height="40" rx="8"/>` },
+  { id:"standard", name:"クリスタル", wins:1,   desc:"縦長に光る結晶。",
+    icon:`<path d="M24 4 34 24 24 44 14 24Z"/>` },
   { id:"drop",     name:"しずく",     wins:2,   desc:"上がとがった、つややかなしずく。",
     icon:`<path d="M24 4S10 21 10 31a14 14 0 0 0 28 0C38 21 24 4 24 4Z"/>` },
   { id:"flame",    name:"炎",         wins:3,   desc:"ゆらめく炎の駒。ふちが橙に光る。",
@@ -2674,10 +2676,10 @@ const SKINS = [
 const cpuWins = () => { let v = 0; try{ v = +localStorage.getItem("finst_cpu_wins") || 0; }catch(e){} return v; };
 const skinOpen = k => cpuWins() >= k.wins;
 function mySkin(){
-  let id = "standard";
-  try{ id = localStorage.getItem("finst_skin") || "standard"; }catch(e){}
+  let id = DEFAULT_SKIN;
+  try{ id = localStorage.getItem("finst_skin") || DEFAULT_SKIN; }catch(e){}
   const k = SKINS.find(x => x.id === id);
-  return k && skinOpen(k) ? id : "standard";
+  return k && skinOpen(k) ? id : DEFAULT_SKIN;
 }
 function useSkin(id){
   const k = SKINS.find(x => x.id === id);
@@ -5439,8 +5441,8 @@ window.getFinst3DView = () => !S ? null : ({
   hands:S.hands, max:S.max, bottom:bottomP(), names:NAMES, turn:S.turn,
   /* 自分の席は手元の選択をそのまま使う（相手の書き込みで一瞬戻らないように）。
      CPU戦と1台版では、自分（プレイヤー1）だけがスキンを着る */
-  skins: online ? [0,1].map(p => p === seat ? mySkin() : ((S.skins && S.skins[p]) || "standard"))
-                : [mySkin(), "standard"],
+  skins: online ? [0,1].map(p => p === seat ? mySkin() : ((S.skins && S.skins[p]) || DEFAULT_SKIN))
+                : [mySkin(), DEFAULT_SKIN],
   mode:S.mode, selected:S.sel, disabled:busy || S.over,
   clickable:[0,1].map(p=>[0,1].map(h=>handEl(p,h)?.tabIndex===0)),
   targets:[0,1].map(p=>[0,1].map(h=>handEl(p,h)?.classList.contains("target")))
