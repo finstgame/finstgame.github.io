@@ -216,3 +216,13 @@ test('two simultaneous rematches settle on the same match on both devices',()=>{
  t.run('applyRemote(Object.assign(newState("hard"),{seq:5,game:"z",cards:[[3],[4]]}))');
  assert.equal(t.run('S.game'),'k','a larger name with the same number is ignored');
 });
+test('a shrink is not lifted by emptying that hand with a split; it is lifted when the hand is knocked out',async()=>{
+ const t=harness();
+ t.run('S.mode="quick";S.cards=[[11],[]];S.hands=[[1,1],[3,1]];S.turn=0;useCard(11);');await t.drain();
+ t.run('stepGotHand(1,0);');await t.drain();
+ t.run('busy=false;S.phase="normal";S.turn=1;applySplit(0,4);');await t.drain();
+ let s=t.state();assert.equal(s.outAt[1][0],4,'emptying by split keeps the shrink');assert.equal(s.shrunk[1][0],true);
+ t.run('busy=false;S.phase="normal";S.turn=1;applySplit(3,1);');await t.drain();
+ t.run('busy=false;S.phase="normal";S.pending=null;S.cards=[[],[]];S.turn=0;declareAttack({from:0,fromHand:0,to:1,toHand:0,damage:1,kind:"touch"});');await t.drain();
+ s=t.state();assert.equal(s.hands[1][0],0,'3 + 1 = 4 knocks out the shrunk hand');assert.equal(s.outAt[1][0],5,'and the shrink is lifted once knocked out');
+});
