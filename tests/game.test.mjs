@@ -126,7 +126,7 @@ test('crystal clusters preserve counts 0–5 and opponent labels follow either v
  }finally{globalThis.document=oldDocument;}
 });
 test('update 2.0: an empty hand is dealt one random card from the current deck at the start of that turn',async()=>{
- const t=harness();t.run('S.deck="easy";S.cards=[[],[]];S.hands=[[1,1],[1,1]];declareAttack({from:0,fromHand:0,to:1,toHand:0,damage:1,kind:"touch"});');await t.drain();
+ const t=harness();t.run('S.deck="easy";S.cards=[[],[]];S.dry=[false,true];S.hands=[[1,1],[1,1]];declareAttack({from:0,fromHand:0,to:1,toHand:0,damage:1,kind:"touch"});');await t.drain();
  const s=t.state();assert.equal(s.turn,1);assert.equal(s.cards[1].length,1);assert.ok(t.run('DECKS.easy.ids').includes(s.cards[1][0]));
  assert.equal(s.cards[0].length,0,'only the player whose turn starts is dealt');
  assert.ok(!/「/.test(s.msg),'the shared message does not reveal the dealt card');
@@ -195,4 +195,23 @@ test('skins: every piece shape builds, re-skins, and disposes cleanly',async()=>
   a.setView({hands:[[1,1],[1,1]],max:[[4,4],[4,4]],bottom:0,names:['A','B'],turn:0,skins:['nope','standard']});
   assert.equal(a.handNodes[0][0].skin,'standard','unknown skin falls back');
  }finally{globalThis.document=oldDocument;}
+});
+test('a hand emptied by a steal on the opponent turn is refilled only after one empty turn of its own',async()=>{
+ const t=harness();t.run('S.deck="hard";S.cards=[[14],[5]];S.hands=[[1,1],[1,1]];S.turn=0;useCard(14);');await t.drain();
+ let s=t.state();assert.equal(s.turn,1);assert.equal(s.cards[1].length,0,'the stolen-from hand is not refilled at once');assert.equal(s.cards[0].length,1);
+ t.run('busy=false;S.phase="normal";declareAttack({from:1,fromHand:0,to:0,toHand:0,damage:1,kind:"touch"});');await t.drain();
+ t.run('S.cards[0]=[];busy=false;S.phase="normal";S.pending=null;declareAttack({from:0,fromHand:0,to:1,toHand:1,damage:1,kind:"touch"});');await t.drain();
+ s=t.state();assert.equal(s.turn,1);assert.equal(s.cards[1].length,1,'after one empty turn of its own, one card is dealt');
+});
+test('a rematch keeps the mode of the current match, not the local lobby choice',()=>{
+ const t=harness();t.run('deckMode="hard";ruleMode="quick";S.deck="tech";S.mode="deep";S.cpu=true;online=false;restart();');
+ assert.equal(t.run('S.deck'),'tech');assert.equal(t.run('S.mode'),'deep');
+ assert.ok(t.run('S.cards[0].every(id=>deckIds("tech").includes(id))'));
+});
+test('two simultaneous rematches settle on the same match on both devices',()=>{
+ const t=harness();t.run('online=true;seat=0;S.seq=5;S.game="m";applying=false;');
+ t.run('applyRemote(Object.assign(newState("hard"),{seq:5,game:"k",cards:[[1],[2]]}))');
+ assert.equal(t.run('S.game'),'k','the smaller name wins the tie');
+ t.run('applyRemote(Object.assign(newState("hard"),{seq:5,game:"z",cards:[[3],[4]]}))');
+ assert.equal(t.run('S.game'),'k','a larger name with the same number is ignored');
 });

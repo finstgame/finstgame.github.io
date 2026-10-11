@@ -1503,7 +1503,7 @@ const NET = {
 /* 紛らわしい文字（I L O 0 1）を除いた6文字 */
 const CODE_ALPHABET = "ABCDEFGHJKMNPQRSTUVWXYZ23456789";
 /* 同期する項目。sel / pick / step は各自の手元の操作なので送らない */
-const SYNC = ["hands","max","outAt","expanded","shrunk","seen","poison","snaps","puppet","skins","mode","deck","cards","used","turn","phase","pending","over","winner","why","msg","hit","play","hist","seal","seq"];
+const SYNC = ["game","dry","hands","max","outAt","expanded","shrunk","seen","poison","snaps","puppet","skins","mode","deck","cards","used","turn","phase","pending","over","winner","why","msg","hit","play","hist","seal","seq"];
 
 /* アウトの条件。部屋を作った側が決め、相手はそれを受け取る。
    quick … その数以上でアウト（手が落ちやすく、決着が早い）
@@ -1562,19 +1562,24 @@ function newCode(){
 }
 
 /* 対戦の初期状態。部屋を作った側だけが作り、相手はこれを受け取る */
-function newState(){
+/* deck を渡すとそのモードで配る。連戦（もう一戦・最初から）は今の試合のモードを渡す。
+   渡さないとロビーで選んでいるモードになる（押した人のロビーの選択で変わってしまう） */
+function newState(deck){
+  if(!DECKS[deck]) deck = deckMode;
   return {
+    game:  Math.random().toString(36).slice(2, 10),   // 試合ごとの名札。同時に配り直したときの決着に使う
     hands: [[1,1],[1,1]],
     max:   [[4,4],[4,4]],                // 手ごとの上限。拡張した手だけ 5
-    mode:  ruleMode,                     // quick | deep
-    deck:  deckMode,                     // easy | hard | tech（配る特殊技の範囲）
+    mode:  DECKS[deck].rule,             // quick | deep
+    deck:  deck,                         // easy | hard | tech（配る特殊技の範囲）
     outAt: [[5,5],[5,5]],                // 手ごとのアウトの基準。拡張した手だけ 6
     expanded: [[false,false],[false,false]],  // 拡張したのはどの手か
     shrunk:   [[false,false],[false,false]],  // 縮小されたのはどの手か
     seen:   [[],[]],      // 透視で見た相手の札（見た側の番号で持つ）
     poison: [],           // {p,h,left} ターン終了ごとに1ダメージ
     snaps:  [[],[]],      // 各自が自分の番を終えた時点の指。巻き戻し用
-    cards: [deal(deckMode), deal(deckMode)],
+    cards: [deal(deck), deal(deck)],
+    dry:   [false,false],  // 自分の番の終わりに手札が空だったか。空のまま次の番が来たら1枚配る
     used:  [[],[]],
     turn: Math.random() < 0.5 ? 0 : 1,   // 先攻はランダム
     phase: "normal",                     // normal | defense | resolving | finished
@@ -1623,7 +1628,12 @@ function commit(){
 
 function applyRemote(snap){
   if(!snap) return;
-  if(S && (snap.seq || 0) <= (S.seq || 0)) return;   // 自分の書き込みの反射・古い更新は捨てる
+  /* 自分の書き込みの反射・古い更新は捨てる。
+     ただし2人が同時に「もう一戦」を押すと、同じ番号で別々の試合が届く。
+     そのときは名札（game）の小さい方に両方そろえる（どちらの端末でも同じ答えになる） */
+  const sameSeq = S && (snap.seq || 0) === (S.seq || 0);
+  const tieWin  = sameSeq && snap.game && S.game && snap.game < S.game;
+  if(S && (snap.seq || 0) <= (S.seq || 0) && !tieWin) return;
   applying = true;
   const before = JSON.parse(JSON.stringify(S.hands));
   SYNC.forEach(k => S[k] = snap[k]);
@@ -2558,7 +2568,7 @@ function openInfo(){
 
     <h4>能力カード</h4>
     <ul>
-      <li>モードで決めた範囲から3枚。<b>各1回きり</b>。手札が無くなると、次の自分の番に1枚だけランダムに配られる</li>
+      <li>モードで決めた範囲から3枚。<b>各1回きり</b>。手札が無くなると、次の自分の番に1枚だけランダムに配られる<span class="sub2">略奪で相手の番に取られて無くなったときは、自分の番を1回手札なしで過ごしてから配られる</span></li>
       <li><b>相手の手札は見えない</b>（枚数だけ分かる）</li>
       <li>「防御割り込み」は<b>相手に攻撃されたとき</b>に使う。15秒で自動パス</li>
       <li><b>拡張</b>は<b>選んだ片手だけ</b>、5でアウトが6でアウトになる。その手は5本まで持てる</li>
@@ -2739,7 +2749,7 @@ const iRespond = () => !online || (S.pending && S.pending.responder === seat);
 function restart(){
   if(!online && S && S.cpu){
     cpuStop();
-    const st = newState();
+    const st = newState(S.deck);
     Object.assign(S, st);
     S.cpu = true; S.sel = null; S.pick = null; S.step = null;
     busy = false;
@@ -2752,7 +2762,13 @@ function restart(){
     return;
   }
   if(online){
-    const st = newState();
+    /* 相手が先に配り直していたら、それに乗るだけ（二重に配らない） */
+    if(!S.over){
+      document.getElementById("win").classList.remove("open");
+      closeAllPanels(); render(); say(S.msg || "");
+      return;
+    }
+    const st = newState(S.deck);
     Object.assign(S, st);
     S.sel = null; S.pick = null; S.step = null;
     S.msg = `新しい試合を配りました。<span class="sub">先攻は ${NAMES[S.turn]}</span>`;
@@ -5160,6 +5176,10 @@ function endTurn(msg){
   } else {
     /* 自分の番を終えた時点の指を控えておく。巻き戻しが戻る先はここ */
     S.snaps[actor] = (S.snaps[actor] || []).concat([S.hands[actor].slice()]).slice(-3);
+    /* 自分の番を手札なしで終えたかを残す。略奪で相手の番に取られた分は、
+       次の自分の番をいったん手札なしで過ごしてから配る（すぐ戻ると略奪の意味がない） */
+    S.dry = (S.dry || [false,false]).slice();
+    S.dry[actor] = !S.cards[actor].length;
     S.turn = foe(S.turn);
     /* 操り：使った番が終わったら、相手の番に入って操作を始める。
        操られた番が終わったら、元に戻す（次は操った人の番になる） */
@@ -5189,7 +5209,7 @@ function endTurn(msg){
    札を使い切ったあとも読み合いが続き、同じ形をくり返すだけの試合になりにくい。
    どの札が来たかは本人にしか見せない（共有する文言には名前を出さない） */
 function dealIfEmpty(p){
-  if(S.cards[p].length) return "";
+  if(S.cards[p].length || !(S.dry && S.dry[p])) return "";
   const pool = deckIds(S.deck || deckMode);
   const got = pool[Math.floor(Math.random() * pool.length)];
   S.cards[p] = [got];
