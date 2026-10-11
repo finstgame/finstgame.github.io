@@ -8,14 +8,20 @@ const vector = (x=0,y=0,z=0) => new THREE.Vector3(x,y,z);
    本数を表す駒の形。色はプレイヤー色のまま（どちらの駒か一目でわかるように）にして、
    形と、ふちの差し色だけを変える。stretch は縦の伸ばし方（標準のクリスタルは縦長）。
    形はどれも、幅がおよそ -1〜1 に収まる大きさで作る（並べ方を共通にするため）。 */
+function extrude(shape, depth){
+  const g=new THREE.ExtrudeGeometry(shape,{depth,bevelEnabled:true,bevelThickness:.05,bevelSize:.05,bevelSegments:1,curveSegments:10});
+  g.center();
+  return g;
+}
 function shapeGeo(points, depth){
   const shape=new THREE.Shape();
   points.forEach(([x,y],i)=>i?shape.lineTo(x,y):shape.moveTo(x,y));
   shape.closePath();
-  const g=new THREE.ExtrudeGeometry(shape,{depth,bevelEnabled:true,bevelThickness:.05,bevelSize:.05,bevelSegments:1});
-  g.center();
-  return g;
+  return extrude(shape, depth);
 }
+const lathe=(points,seg)=>new THREE.LatheGeometry(points.map(([x,y])=>new THREE.Vector2(x,y)),seg);
+const range=(n,f)=>Array.from({length:n},(_,i)=>f(i/(n-1),i));
+const deg=d=>d*Math.PI/180;
 const PIECES = {
   standard: { stretch:2.1, accent:0xffffff, geo:()=>new THREE.OctahedronGeometry(1,0) },
   flame: { stretch:1.15, size:1.3, accent:0xffb454, flicker:true, geo:()=>new THREE.LatheGeometry(
@@ -25,7 +31,47 @@ const PIECES = {
   }),.32) },
   sword: { stretch:1, size:1.45, accent:0xdfe6f0, geo:()=>shapeGeo([
     [0,-1.75],[.26,-1.3],[.26,.42],[.72,.42],[.72,.7],[.15,.7],[.15,1.2],[.28,1.3],[.28,1.52],[-.28,1.52],[-.28,1.3],[-.15,1.2],[-.15,.7],[-.72,.7],[-.72,.42],[-.26,.42],[-.26,-1.3]
-  ].map(([x,y])=>[x,-y]),.22) }   // 切っ先を上に掲げる
+  ].map(([x,y])=>[x,-y]),.22) },   // 切っ先を上に掲げる
+  // 指：このゲームの主役。丸い棒
+  finger: { stretch:1, size:1, accent:0xffe0c2, geo:()=>new THREE.CapsuleGeometry(.5,1.5,4,10) },
+  // しずく：丸い底で、上がとがる
+  drop: { stretch:1, size:1.15, accent:0x9fe8ff, geo:()=>lathe([[0,-1],[.5,-.92],[.8,-.6],[.86,-.15],[.7,.4],[.4,.95],[0,1.6]],12) },
+  // ハート
+  heart: { stretch:1, size:1.15, accent:0xff9ec4, geo:()=>{
+    const h=new THREE.Shape();
+    h.moveTo(0,-1.2);h.bezierCurveTo(-.5,-.75,-1.25,-.25,-1.25,.4);h.bezierCurveTo(-1.25,1,-.7,1.3,-.35,1.3);
+    h.bezierCurveTo(-.1,1.3,0,1.1,0,.95);h.bezierCurveTo(0,1.1,.1,1.3,.35,1.3);h.bezierCurveTo(.7,1.3,1.25,1,1.25,.4);
+    h.bezierCurveTo(1.25,-.25,.5,-.75,0,-1.2);
+    return extrude(h,.4);
+  } },
+  // 雷
+  bolt: { stretch:1, size:1.3, accent:0xfff27a, geo:()=>shapeGeo([[-.1,1.6],[.65,1.6],[.18,.32],[.65,.32],[-.4,-1.6],[-.05,-.18],[-.55,-.18]],.24) },
+  // キューブ：角を上にして浮かぶ
+  cube: { stretch:1, size:.95, accent:0xc8d2e0, geo:()=>new THREE.BoxGeometry(1.3,1.3,1.3).rotateZ(Math.PI/4).rotateX(Math.atan(Math.SQRT1_2)) },
+  // 三日月
+  moon: { stretch:1, size:1.25, accent:0xfff1b8, geo:()=>{
+    const outer=range(23,t=>{const a=deg(70+220*t);return [1.1*Math.cos(a),1.1*Math.sin(a)];});
+    const inner=range(23,t=>{const a=deg(263.2-166.4*t);return [.5+1.041*Math.cos(a),1.041*Math.sin(a)];});
+    return shapeGeo(outer.concat(inner),.26);
+  } },
+  // 桜：花びら5枚、先に切れこみ
+  sakura: { stretch:1, size:1.2, accent:0xffc8dd, geo:()=>shapeGeo(range(160,t=>{
+    const a=t*Math.PI*2, k=(t*5)%1;
+    const r=.45+.7*Math.pow(Math.sin(Math.PI*k),.7)-.24*Math.max(0,1-Math.abs(k-.5)/.07);
+    return [r*Math.sin(a),r*Math.cos(a)];
+  }).slice(0,-1),.2) },
+  // 盾
+  shield: { stretch:1, size:1.2, accent:0xd9e3f0, geo:()=>shapeGeo([[-.95,1.2],[-.3,1.1],[0,1.25],[.3,1.1],[.95,1.2],[.95,.2],[.85,-.4],[.55,-.95],[0,-1.5],[-.55,-.95],[-.85,-.4],[-.95,.2]],.26) },
+  // 牙：根もとが太く、反りながら細くなる
+  fang: { stretch:1, size:1.25, accent:0xfff6e0, geo:()=>{
+    const c=t=>[-.25+.75*t*t,-1.3+2.9*t], w=t=>.52*(1-t)+.02;
+    const right=range(14,t=>[c(t)[0]+w(t),c(t)[1]]), left=range(14,t=>[c(1-t)[0]-w(1-t),c(1-t)[1]]);
+    return shapeGeo(right.concat(left),.34);
+  } },
+  // ダイヤ：上が平らなブリリアントカット
+  gem: { stretch:1, size:1.15, accent:0xe8f6ff, geo:()=>lathe([[0,-1.3],[1.05,.2],[1.1,.32],[.7,.75],[0,.75]],8) },
+  // 王冠
+  crown: { stretch:1, size:1.2, accent:0xffd76a, geo:()=>shapeGeo([[-1,-.75],[1,-.75],[1,.75],[.6,.18],[.33,1],[0,.28],[-.33,1],[-.6,.18],[-1,.75]],.42) }
 };
 export const PIECE_IDS = Object.keys(PIECES);
 const ease = t => 1 - Math.pow(1-t,3);

@@ -2640,14 +2640,36 @@ function closeCards(){ document.getElementById("cards").classList.remove("open")
    CPU戦で勝った数（finst_cpu_wins）で解放し、選んだものは finst_skin に残す。
    形そのものは arena3d.js の PIECES。ここに1行足して、向こうに形を足せば並ぶ */
 const SKINS = [
-  { id:"standard", name:"クリスタル", wins:0,  desc:"いつもの縦長の結晶。",
+  { id:"standard", name:"クリスタル", wins:0,   desc:"いつもの縦長の結晶。",
     icon:`<path d="M24 4 34 24 24 44 14 24Z"/>` },
-  { id:"flame",    name:"炎",         wins:3,  desc:"ゆらめく炎の駒。ふちが橙に光る。",
+  { id:"finger",   name:"指",         wins:1,   desc:"このゲームの主役。まるい指が並ぶ。",
+    icon:`<rect x="16" y="4" width="16" height="40" rx="8"/>` },
+  { id:"drop",     name:"しずく",     wins:2,   desc:"上がとがった、つややかなしずく。",
+    icon:`<path d="M24 4S10 21 10 31a14 14 0 0 0 28 0C38 21 24 4 24 4Z"/>` },
+  { id:"flame",    name:"炎",         wins:3,   desc:"ゆらめく炎の駒。ふちが橙に光る。",
     icon:`<path d="M24 4c3 8 12 13 12 25a12 12 0 0 1-24 0c0-7 4-10 6-15 1 4 3 6 5 6-1-6 0-11 1-16Z"/>` },
-  { id:"star",     name:"星",         wins:7,  desc:"金のふちの星。くるくる回る。",
+  { id:"heart",    name:"ハート",     wins:5,   desc:"ふちが桃色に光るハート。",
+    icon:`<path d="M24 42S5 30 5 17a9.5 9.5 0 0 1 19-3 9.5 9.5 0 0 1 19 3c0 13-19 25-19 25Z"/>` },
+  { id:"star",     name:"星",         wins:7,   desc:"金のふちの星。くるくる回る。",
     icon:`<path d="M24 4l5.9 12.6 13.6 1.6-10 9.3 2.6 13.5L24 34.3 11.9 41l2.6-13.5-10-9.3 13.6-1.6Z"/>` },
-  { id:"sword",    name:"剣",         wins:15, desc:"切っ先を上に掲げた剣。",
-    icon:`<path transform="rotate(180 24 24)" d="M24 46l-3-6V20h-7v-3h7v-6h-2V8h10v3h-2v6h7v3h-7v20Z"/>` }
+  { id:"bolt",     name:"雷",         wins:10,  desc:"黄色いふちの稲妻。",
+    icon:`<path d="M27 3 11 27h10l-4 18 20-26H26l5-16Z"/>` },
+  { id:"cube",     name:"キューブ",   wins:12,  desc:"角を上にして浮かぶ立方体。",
+    icon:`<path d="M24 4l17 10v20L24 44 7 34V14Z"/>` },
+  { id:"sword",    name:"剣",         wins:15,  desc:"切っ先を上に掲げた剣。",
+    icon:`<path transform="rotate(180 24 24)" d="M24 46l-3-6V20h-7v-3h7v-6h-2V8h10v3h-2v6h7v3h-7v20Z"/>` },
+  { id:"moon",     name:"三日月",     wins:20,  desc:"ふちが月の色に光る三日月。",
+    icon:`<path d="M30 4a20 20 0 1 0 14 34A16 16 0 0 1 30 4Z"/>` },
+  { id:"sakura",   name:"桜",         wins:25,  desc:"先に切れこみのある、5枚の花びら。",
+    icon:`<g>${[0,72,144,216,288].map(r => `<ellipse cx="24" cy="13" rx="6.5" ry="10" transform="rotate(${r} 24 24)"/>`).join("")}</g>` },
+  { id:"shield",   name:"盾",         wins:30,  desc:"銀のふちの盾。",
+    icon:`<path d="M8 6h32v14c0 12-8 19-16 24C16 39 8 32 8 20Z"/>` },
+  { id:"fang",     name:"牙",         wins:40,  desc:"根もとが太く、反りながらとがる牙。",
+    icon:`<path d="M14 44c0-14 4-28 22-40-6 12-8 26-8 40Z"/>` },
+  { id:"gem",      name:"ダイヤ",     wins:50,  desc:"カットの面がきらめく宝石。",
+    icon:`<path d="M12 8h24l8 12-20 24L4 20Z"/>` },
+  { id:"crown",    name:"王冠",       wins:75,  desc:"いちばん遠くにある、金のふちの王冠。",
+    icon:`<path d="M5 38V12l10 11 9-15 9 15 10-11v26Z"/>` }
 ];
 const cpuWins = () => { let v = 0; try{ v = +localStorage.getItem("finst_cpu_wins") || 0; }catch(e){} return v; };
 const skinOpen = k => cpuWins() >= k.wins;
