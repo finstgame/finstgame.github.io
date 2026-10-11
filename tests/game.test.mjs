@@ -226,3 +226,44 @@ test('a shrink is not lifted by emptying that hand with a split; it is lifted wh
  t.run('busy=false;S.phase="normal";S.pending=null;S.cards=[[],[]];S.turn=0;declareAttack({from:0,fromHand:0,to:1,toHand:0,damage:1,kind:"touch"});');await t.drain();
  s=t.state();assert.equal(s.hands[1][0],0,'3 + 1 = 4 knocks out the shrunk hand');assert.equal(s.outAt[1][0],5,'and the shrink is lifted once knocked out');
 });
+test('online rematch keeps counting up so the other device accepts it',()=>{
+ const t=harness();t.run('online=true;seat=0;room="X";S.seq=7;S.over=true;S.deck="tech";commit=()=>Promise.resolve();restart();');
+ assert.equal(t.run('S.seq'),7,'seq is not reset to 0');assert.equal(t.run('S.deck'),'tech');
+ const u=harness();u.run('online=true;seat=1;S.seq=7;S.over=true;applying=false;');
+ u.run('applyRemote(Object.assign(newState("tech"),{seq:8,game:"new"}))');assert.equal(u.run('S.over'),false,'the other device moves to the new match');
+});
+test('double: the queued second hit is synced and still comes from the double user after a counter',async()=>{
+ const t=harness();assert.ok(t.run('SYNC.includes("doubleQueue")'));
+ t.run('S.hands=[[2,2],[1,1]];S.cards=[[],[7]];S.turn=0;S.doubleQueue=[{by:0,mine:1,theirs:1}];S.phase="defense";S.pending={from:0,fromHand:0,to:1,toHand:0,responder:1,damage:2,kind:"double",modifiers:[]};respond(7);');
+ await t.drain();
+ const ev=t.hitEvents.map(h=>[h.p,h.dp,h.kind]);
+ assert.ok(!ev.some(([p,dp,k])=>k==='double'&&p===1),'the defender never fires the double second hit');
+});
+test('a poison stopped by the wall does not stick',async()=>{
+ const t=harness();t.run('S.hands=[[3,1],[1,1]];S.cards=[[],[17]];S.turn=0;S.phase="defense";S.pending={from:0,fromHand:0,to:1,toHand:0,responder:1,damage:3,kind:"poison",modifiers:[]};respond(17);');
+ await t.drain();assert.deepEqual(t.state().poison,[]);
+});
+test('reverse keeps your expansion when your expanded hand receives 0',async()=>{
+ const t=harness();t.run('S.hands=[[3,1],[0,2]];S.max[0][0]=5;S.outAt[0][0]=6;S.expanded[0][0]=true;S.cards=[[1],[]];S.turn=0;useCard(1);');
+ await t.drain();const s=t.state();assert.deepEqual(s.hands[0],[0,2]);assert.equal(s.max[0][0],5,'expansion stays with its owner');
+});
+test('expanding a knocked-out hand is not undone at the end of the turn',async()=>{
+ const t=harness();t.run('S.hands=[[0,2],[1,1]];S.cards=[[5],[]];S.turn=0;useCard(5);stepGotHand(0,0);');
+ await t.drain();assert.equal(t.state().max[0][0],5);
+});
+test('a card the opponent used no longer counts as seen',async()=>{
+ const t=harness();t.run('S.seen=[[2],[]];S.cards=[[],[2]];S.hands=[[1,1],[1,1]];S.phase="defense";S.pending={from:0,fromHand:0,to:1,toHand:0,responder:1,damage:1,kind:"touch",modifiers:[]};respond(2);');
+ await t.drain();assert.deepEqual(t.state().seen[0],[]);
+});
+test('1-device: after a counter, the device is handed to the original attacker before their defense sheet',async()=>{
+ const t=harness();t.run('globalThis.__pass=[];showPass=(w,n,after)=>{holder=w;globalThis.__pass.push(w);};S.cpu=false;online=false;S.turn=0;holder=0;S.hands=[[2,2],[1,1]];S.cards=[[2],[7]];');
+ t.run('declareAttack({from:0,fromHand:0,to:1,toHand:0,damage:2,kind:"touch"})');await t.drain();
+ assert.deepEqual(t.run('JSON.stringify(globalThis.__pass)'),'[1]','the defender takes the device');
+ t.run('respond(7)');await t.drain();await t.drain();
+ assert.ok(t.run('globalThis.__pass.includes(0)'),'the attacker takes the device back for the counter');
+});
+test('double: healing the first hit still lets the second hit come',async()=>{
+ const t=harness();t.run('S.hands=[[2,3],[1,1]];S.cards=[[],[9]];S.turn=0;S.doubleQueue=[{by:0,mine:1,theirs:1}];S.phase="defense";S.pending={from:0,fromHand:0,to:1,toHand:0,responder:1,damage:2,kind:"double",modifiers:[]};respond(9);stepGotHand(1,0);');
+ await t.drain();await t.drain();
+ const s=t.state();assert.equal(s.hands[1][0],3,'the first hit is healed');assert.equal(s.hands[1][1],4,'the second hit (3) still lands on the right hand: 1 + 3 = 4');
+});

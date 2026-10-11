@@ -1475,7 +1475,7 @@ const CARDS = {
   8:  {name:"ダブル",   timing:"attack",  text:"両手それぞれで1回ずつ攻撃する。同じ手を2回は狙えない"},
   9:  {name:"ヒール",   timing:"defense", text:"無効化した上で、任意の自分の手にダメージ分を追加（超過分は切り捨て／アウトの手も復活できる）"},
   10: {name:"コピー",   timing:"self",    text:"自分の両手を相手と同じ本数にする。カードはコピーしない"},
-  11: {name:"縮小",     timing:"self",    text:"相手の手を1つ選ぶ。その手の上限が1つ減る（5→4、6→5）。上限を超えていた指はあふれて落ちる。ただしその手がアウトにされると解ける（分配で0にしても解けない）"},
+  11: {name:"縮小",     timing:"self",    text:"相手の手を1つ選ぶ。その手の上限が1つ減る（4本まで→3本まで、拡張していたら5本まで→4本まで）。上限を超えていた指はあふれて落ちる。ただしその手がアウトにされると解ける（分配で0にしても解けない）"},
   12: {name:"封印",     timing:"self",    text:"相手は次の自分の番、カードを使えない"},
   13: {name:"透視",     timing:"self",    text:"相手の手札を1枚、ランダムに覗く。見た札はこの試合ずっと表向きのまま"},
   14: {name:"略奪",     timing:"self",    text:"相手の手札を1枚ランダムに奪って自分の手札にする"},
@@ -1503,7 +1503,7 @@ const NET = {
 /* 紛らわしい文字（I L O 0 1）を除いた6文字 */
 const CODE_ALPHABET = "ABCDEFGHJKMNPQRSTUVWXYZ23456789";
 /* 同期する項目。sel / pick / step は各自の手元の操作なので送らない */
-const SYNC = ["game","dry","parked","hands","max","outAt","expanded","shrunk","seen","poison","snaps","puppet","skins","mode","deck","cards","used","turn","phase","pending","over","winner","why","msg","hit","play","hist","seal","seq"];
+const SYNC = ["game","dry","knocked","doubleQueue","hands","max","outAt","expanded","shrunk","seen","poison","snaps","puppet","skins","mode","deck","cards","used","turn","phase","pending","over","winner","why","msg","hit","play","hist","seal","seq"];
 
 /* アウトの条件。部屋を作った側が決め、相手はそれを受け取る。
    quick … その数以上でアウト（手が落ちやすく、決着が早い）
@@ -1582,7 +1582,7 @@ function newState(deck){
     snaps:  [[],[]],      // 各自が自分の番を終えた時点の指。巻き戻し用
     cards: [deal(deck), deal(deck)],
     dry:   [false,false],
-    parked: [[false,false],[false,false]],   // 自分の分配で0にした手。相手にアウトにされたのではないので、拡張・縮小は解かない  // 自分の番の終わりに手札が空だったか。空のまま次の番が来たら1枚配る
+    knocked: [[false,false],[false,false]],  // この番にアウトにされた手。拡張・縮小を解く印（分配や反転で0になっただけの手は立てない）  // 自分の番の終わりに手札が空だったか。空のまま次の番が来たら1枚配る
     used:  [[],[]],
     turn: Math.random() < 0.5 ? 0 : 1,   // 先攻はランダム
     phase: "normal",                     // normal | defense | resolving | finished
@@ -1621,12 +1621,24 @@ function commit(){
   if(!online || applying || !room || !sb) return Promise.resolve();
   S.seq = (S.seq || 0) + 1;
   if(seat === 0 || seat === 1){ S.skins = (S.skins || [DEFAULT_SKIN, DEFAULT_SKIN]).slice(); S.skins[seat] = mySkin(); }
-  const snap = snapshot();
+  return sendSnap(snapshot(), 0);
+}
+/* 書き込みが失敗したら、少し待って同じ内容を送り直す。
+   送り直さないと、番を渡したつもりの書き込みが届かず、2人とも相手を待ち続ける。
+   そのあいだに自分が次の書き込みをしていたら、古い内容は送らない */
+function sendSnap(snap, tries){
+  const retry = why => {
+    netStatus(false, why);
+    if(tries < 4) setTimeout(() => {
+      if(online && room && sb && S.seq === snap.seq) sendSnap(snap, tries + 1);
+    }, 1500 * (tries + 1));
+  };
   return sb.from("matches")
     .update({ state: snap,
-              deadline: S.pending && S.pending.deadline ? new Date(S.pending.deadline).toISOString() : null })
+              deadline: snap.pending && snap.pending.deadline ? new Date(snap.pending.deadline).toISOString() : null })
     .eq("room_code", room)
-    .then(res => { if(res && res.error) netStatus(false, res.error.message); });
+    .then(res => { if(res && res.error) retry(res.error.message); else if(tries) netStatus(true); },
+          err => retry(err && err.message || "送信できませんでした"));
 }
 
 function applyRemote(snap){
@@ -1638,6 +1650,7 @@ function applyRemote(snap){
   const tieWin  = sameSeq && snap.game && S.game && snap.game < S.game;
   if(S && (snap.seq || 0) <= (S.seq || 0) && !tieWin) return;
   applying = true;
+  if(snap.game && snap.game !== S.game) lastPlayN = 0;   // 新しい試合では演出の番号が1から振り直される
   const before = JSON.parse(JSON.stringify(S.hands));
   SYNC.forEach(k => S[k] = snap[k]);
   S.sel = null; S.pick = null; S.step = null;
@@ -1717,7 +1730,9 @@ async function animateDiff(before){
    応答側は受信時点から数え直すので、その往復ぶんを見込んで余裕を持たせる。 */
 function startWatchdog(){
   clearTimeout(watchdog);
-  const ms = Math.max(600, (S.pending.deadline - Date.now()) + 3000);
+  /* 応答側は受け取った時点から15秒を数え直す。届くのが遅れた分だけ応答側の締切は後ろへずれるので、
+     ここは余裕を大きめに取る（3秒だと、通信が遅れたときに2台が同じ攻撃を別々に解決していた） */
+  const ms = Math.max(600, (S.pending.deadline - Date.now()) + 8000);
   watchdog = setTimeout(() => {
     if(online && S.phase === "defense" && S.pending && S.pending.responder !== seat) passDefense(true);
   }, ms);
@@ -1727,6 +1742,10 @@ function startWatchdog(){
    タブを閉じられた・電池が切れた場合、state は何も変わらないので
    「考えています」のまま永久に待つことになる。それを防ぐ。 */
 let oppHere = true, oppGoneAt = 0, goneTimer = null;
+/* 相手が一度でもこの部屋に来たか。ランダム対戦では、待っていた人はCPU戦を切り上げてから
+   入ってくるので、来る前に「接続が切れています（勝ちにして終わる）」を出すとタダ勝ちになる */
+let oppSeen = false, enteredAt = 0, neverTimer = null;
+const NEVER_MS = 60000;
 let lastPlayN = 0;
 
 function readPresence(){
@@ -1738,7 +1757,7 @@ function readPresence(){
   }catch(e){ return; }
 
   if(here){
-    oppHere = true; oppGoneAt = 0;
+    oppHere = true; oppGoneAt = 0; oppSeen = true;
     clearTimeout(goneTimer);
     renderGone();
   } else if(oppHere){
@@ -1754,6 +1773,7 @@ function renderGone(){
   const bar = document.getElementById("goneBar");
   if(!bar) return;
   const show = online && !oppHere && !S.over &&
+               (oppSeen || Date.now() - enteredAt > NEVER_MS) &&     // 一度も来ていない相手は1分待つ
                !document.getElementById("lobby").classList.contains("open");
   if(!show){ bar.classList.remove("open"); return; }
   bar.innerHTML = `<span>${NAMES[foe(seat)]}の接続が切れています</span>
@@ -1783,7 +1803,7 @@ function notifyTurn(){
   if(S.over){ wasMine = false; document.title = BASE_TITLE; return; }
   const mine = S.phase === "defense"
     ? !!(S.pending && S.pending.responder === seat)
-    : S.turn === seat;
+    : actor() === seat;               // 操りの番は、操作する人に知らせる
   if(mine && !wasMine){
     /* 応答は5秒しかないので、はっきり知らせる */
     buzz(S.phase === "defense" ? [30,70,30] : 25);
@@ -1960,6 +1980,13 @@ function enterGame(){
   render();
   say(S.msg || openingMsg());
   if(S.over) showWin();
+  /* 防御の途中で読み込み直したとき、応答の画面と見張りを戻す。
+     戻さないと、応答側は何もできず、攻撃側は相手が消えると止まったままになる */
+  else if(online && S.phase === "defense" && S.pending){
+    if(S.pending.responder === seat){ S.pending.deadline = Date.now() + RESPONSE_MS; openSheet(); }
+    else startWatchdog();
+  }
+  if(online){ enteredAt = Date.now(); clearTimeout(neverTimer); neverTimer = setTimeout(renderGone, NEVER_MS + 500); }
 }
 
 
@@ -2293,8 +2320,8 @@ async function shareLink(){
 
 function leaveRoom(){
   if(chan) { try{ chan.untrack(); }catch(e){} try{ sb.removeChannel(chan); }catch(e){} chan = null; }
-  clearTimeout(goneTimer);
-  oppHere = true; wasMine = false;
+  clearTimeout(goneTimer); clearTimeout(neverTimer);
+  oppHere = true; oppSeen = false; wasMine = false;
   document.title = BASE_TITLE;
   document.getElementById("goneBar").classList.remove("open");
   online = false; room = null;
@@ -2429,6 +2456,8 @@ async function sendFeedback(){
    減っていくと、見る前に自動パスになってしまう）。 */
 let passAfter = null;                    // 「交代しました」を押した後にやること
 
+/* 1台版で、いま端末を持っている人。覆い（交代画面）を出すたびに更新する */
+let holder = 0;
 function needPassScreen(){
   return !online && S && !S.cpu && !S.over;
 }
@@ -2436,6 +2465,7 @@ function needPassScreen(){
 function showPass(who, note, after){
   if(!S || S.over) return;            // 決着後は覆わない（勝敗画面より手前に出てしまう）
   passAfter = after || null;
+  holder = who;
   document.documentElement.style.setProperty("--c", col(who));
   document.getElementById("passWho").textContent = NAMES[who];
   document.getElementById("passNote").innerHTML = note || "";
@@ -2596,7 +2626,7 @@ function viewerIdx(){
   if(!S || document.getElementById("lobby").classList.contains("open")) return null;
   if(online) return seat;
   if(S.cpu) return 0;
-  return S.turn;                       // 1台を回して遊ぶときは手番の人
+  return holder;                       // 1台を回して遊ぶときは、いま端末を持っている人
 }
 
 /* カードの効果は対戦中に一番よく見たいので、遊び方とは別の画面にしてある */
@@ -2794,7 +2824,9 @@ function restart(){
       return;
     }
     const st = newState(S.deck);
+    const seq = S.seq || 0;
     Object.assign(S, st);
+    S.seq = seq;          // 0に戻すと、相手の端末は「古い更新」として捨ててしまう（もう一戦が届かない）
     S.sel = null; S.pick = null; S.step = null;
     S.msg = `新しい試合を配りました。<span class="sub">先攻は ${NAMES[S.turn]}</span>`;
     busy = false;
@@ -2819,6 +2851,7 @@ function reset(){
      ここで引き継ぐと、CPU戦から1台版へ移ったときにCPUのまま残る。 */
   S = Object.assign(newState(), {sel:null, pick:null, step:null});
   S.cpu = false;
+  holder = S.turn;                     // 1台版は先攻の人が端末を持って始める
   NAMES[1] = "プレイヤー2";
   busy = false;
   stopTimer(); clearTimeout(watchdog);
@@ -3571,7 +3604,7 @@ function cardsHTML(p){
   /* 1台を回して遊ぶときだけ「手番側が表向き」。CPU戦は相手の札を見せない */
   const faceUp = online ? (p === seat)
                : S.cpu ? (p === 0)
-               : (p === actor() && !S.over);
+               : (p === holder && !S.over);
   if(!faceUp){
     /* 透視で覗いた札だけは表を見せる（見たのは自分なので、自分の画面にだけ出る） */
     const v = viewerIdx();
@@ -3611,7 +3644,7 @@ function usable(id, p){
   if(online && (p !== seat || S.turn !== seat)) return {ok:false, why:"相手の番"};
   if(S.phase !== "normal" || S.step) return {ok:false, why:TIMING_LABEL[c.timing]};
   if((S.seal && S.seal[p]) > 0) return {ok:false, why:"封印されている"};
-  if(id === 11 && ![0,1].some(h => S.hands[foe(p)][h] > 0)) return {ok:false, why:"狙える手が無い"};
+  if(id === 11 && ![0,1].some(h => S.hands[foe(p)][h] > 0 && S.max[foe(p)][h] > 1)) return {ok:false, why:"狙える手が無い"};
   if(id === 4 && !S.hands[p].includes(0)) return {ok:false, why:"0の手が無い"};
   if(id === 3 && ![0,1].some(h => S.hands[p][h] > 0 && S.hands[p][h] < S.max[p][h]))
     return {ok:false, why:"増やせる手が無い"};
@@ -3713,7 +3746,7 @@ function enterDefense(){
   } else if(iRespond()){
     /* 1台版は、攻めた人が持ったまま相手の防御札を見てしまう。
        覆ってから開き、制限時間はめくった時点から数え直す。 */
-    if(needPassScreen() && p.responder !== S.turn){
+    if(needPassScreen() && p.responder !== holder){
       stopTimer();
       showPass(p.responder, "攻撃されています。<br>防御カードを使うか決めてください。", () => {
         if(!S.pending || S.phase !== "defense") return;
@@ -3850,6 +3883,9 @@ function respond(id){
     S.phase = "resolving";
     beginStep({id:9, who:r, need:"ownHand", healTarget:true, amount:p.damage,
                text:`<span class="sname">ヒール</span> 無効化しました。${p.damage}本を足す自分の手を選んでください（アウトの手も復活できます）`});
+    /* 応答したことをすぐ相手に送る。送らないと、手を選んでいるあいだに
+       攻撃側の見張りが自動パスしてヒールを上書きする（カウンターで起きた事故と同じ） */
+    commit();
     return;
   }
 
@@ -3914,10 +3950,11 @@ async function resolvePending(){
        : (S.mode === "deep" && before + p.damage >= S.outAt[p.to][p.toHand] ? ` → 繰り下がって ${after}本` : `本`))
     + (p.passNote ? ` ／ ${p.passNote}` : "") + `</span>`;
 
+  if(after === 0 && before > 0) knockOut(p.to, p.toHand);
   note(p.from, `${p.damage}ダメージ → ${NAMES[p.to]}の${hn(p.toHand)}手が`
     + (after === 0 ? "アウト" : `${after}本`));
   /* ポイズンは、刺さった手に毒を残す。落ちた手には残らない */
-  if(p.kind === "poison" && after > 0){
+  if(p.kind === "poison" && after > 0 && p.damage > 0){
     /* fresh を立てておく。刺さった直後のターン終了では効かせない。
        そうしないと2回ぶんのうち1回をその場で使い切ってしまう。 */
     handMods(S).poison.push({ p: p.to, h: p.toHand, left: 2, fresh: true });
@@ -3926,20 +3963,26 @@ async function resolvePending(){
   S.pending = null;
   if(checkDeath()) return;
 
-  /* ダブルの2回目。手番はまだ渡さない */
+  if(continueDouble(head + calc, p.from)) return;
+  endTurn(head + calc);
+}
+
+/* ダブルの2回目。1回目がどう防がれても（シールド・鉄壁・ヒール・カウンター）、
+   2回目はダブルを使った人の手から続ける。手番はまだ渡さない。続けたら true */
+function continueDouble(lead, fallbackBy){
   if(S.doubleQueue && S.doubleQueue.length){
     const nx = S.doubleQueue.shift();
-    const attacker = p.from;
+    const attacker = nx.by != null ? nx.by : fallbackBy;
     if(S.hands[attacker][nx.mine] > 0 && S.hands[foe(attacker)][nx.theirs] > 0){
-      say(head + calc + `<span class="sub">ダブルの2回目</span>`);
+      say(lead + `<span class="sub">ダブルの2回目</span>`);
       busy = false;
       declareAttack({from:attacker, fromHand:nx.mine, to:foe(attacker), toHand:nx.theirs,
                      damage:S.hands[attacker][nx.mine], kind:"double"});
-      return;
+      return true;
     }
   }
   S.doubleQueue = null;
-  endTurn(head + calc);
+  return false;
 }
 
 /* 突き出す→着弾→折れる、の一連（Phase 1 の演出をそのまま使う） */
@@ -4154,6 +4197,7 @@ async function runWorldEnd(me){
   const th = Math.random() < .5 ? 0 : 1;
   await spend(me, 20, { tp, th });
   const before = S.hands[tp].join("/");
+  if(S.hands[tp][1 - th] > 0) knockOut(tp, 1 - th);   // 消えた手はアウトにされた扱い（拡張・縮小も解ける）
   S.hands[tp] = th === 0 ? [1,0] : [0,1];
   /* 残った手の上限が1より小さいことはない（縮小の下限は1）ので、1本はそのまま置ける */
   render();
@@ -4172,6 +4216,10 @@ function lastSnap(p){
 
 function consume(p, id, detail){
   S.cards[p] = S.cards[p].filter(x => x !== id);
+  /* 使った札は相手の「透視で見た」からも外す。外さないと、あとで同じ番号の札が
+     配られたときに、見ていないのに表向きに出てしまう */
+  const o = foe(p);
+  if(S.seen && S.seen[o]){ const i = S.seen[o].indexOf(id); if(i >= 0) S.seen[o] = S.seen[o].filter((_,k) => k !== i); }
   S.used[p].push(id);
   note(p, `「${CARDS[id].name}」を使った`);
   S.play = { id, p, detail: detail || null, n: (S.play ? S.play.n : 0) + 1 };
@@ -4224,6 +4272,7 @@ function stepGotHand(p,h){
   }
 
   if(st.id === 11){                      // 縮小：縮める相手の手を選んだ
+    if(S.max[p][h] <= 1) return;         // もう縮められない手は選べない
     S.step = null; closeStepUI();
     return runShrink(st.who, p, h);
   }
@@ -4301,7 +4350,7 @@ function stepGotHand(p,h){
       busy = false;
       render();
       /* 1回目を通常の攻撃として宣言し、2回目は解決後に続ける */
-      S.doubleQueue = hits.slice(1);
+      S.doubleQueue = hits.slice(1).map(x => Object.assign({by: me}, x));
       declareAttack({from:me, fromHand:hits[0].mine, to:foe(me), toHand:hits[0].theirs,
                      damage:S.hands[me][hits[0].mine], kind:"double"});
     });
@@ -4324,9 +4373,11 @@ function stepGotHand(p,h){
       .then(() => {
         render();
         if(checkDeath()) return;
-        endTurn(`<b>${NAMES[me]}</b>のヒール。${NAMES[orig.from]}の攻撃を無効化した。`
+        const msg = `<b>${NAMES[me]}</b>のヒール。${NAMES[orig.from]}の攻撃を無効化した。`
           + `<span class="sub">${hn(h)}手 ${before} → ${after}本`
-          + (before + amt > S.max[me][h] ? `（上限${S.max[me][h]}で切り捨て）` : "") + `</span>`);
+          + (before + amt > S.max[me][h] ? `（上限${S.max[me][h]}で切り捨て）` : "") + `</span>`;
+        if(continueDouble(msg, orig.from)) return;   // ダブルの1回目を防いだだけなら、2回目は続く
+        endTurn(msg);
       });
     return;
   }
@@ -4414,6 +4465,8 @@ async function runReverse(me){
      受け取った本数は受け取る側の法で正規化される（§3 の想定内コンボ）。 */
   S.hands[0] = b.map((v,h) => norm(v, 0, h));
   S.hands[1] = a.map((v,h) => norm(v, 1, h));
+  /* 受け取った本数が基準を超えて落ちた手だけ「アウトにされた」。0を受け取っただけなら拡張は残る */
+  [0,1].forEach(h => { if(b[h] > 0 && S.hands[0][h] === 0) knockOut(0, h); if(a[h] > 0 && S.hands[1][h] === 0) knockOut(1, h); });
   render();
   await poof(0, 0, "反転", "nul");
   render();
@@ -4427,6 +4480,7 @@ async function runCopy(me){
   const opp = foe(me);
   const src = S.hands[opp].slice();
   S.hands[me] = src.map((v,h) => norm(v, me, h));   // その手の基準を超える本数を受け取ると即アウト
+  [0,1].forEach(h => { if(src[h] > 0 && S.hands[me][h] === 0) knockOut(me, h); });
   render();
   await poof(me, 0, "コピー", "nul");
   render();
@@ -4475,6 +4529,7 @@ async function runExpand(me, h){
   S.max[me][h] = 5;
   S.outAt[me][h] = 6;
   S.expanded[me][h] = true;
+  handMods(S).shrunk[me][h] = false;   // 縮小されていた手でも、拡張すれば5本まで持てる手になる（縮小の印は外す）
   render();
   await poof(me, h, "拡張", "heal");
   render();
@@ -5157,9 +5212,6 @@ function applySplit(a,b){
   const from = S.hands[S.turn].join("/");
   note(S.turn, `分配 ${from} → ${a}/${b}`);
   S.hands[S.turn] = [a,b];
-  /* 分配で0にした手は「空けた」だけ。拡張・縮小はそのまま残す（縮小を分配で逃げられないように） */
-  if(!S.parked) S.parked = [[false,false],[false,false]];
-  S.parked[S.turn] = [a === 0, b === 0];
   closeSplit();
   endTurn(`指を組み替えた。<span class="sub">${from} → ${a}/${b}</span>`);
 }
@@ -5258,6 +5310,7 @@ function tickPoison(){
     const before = S.hands[t.p][t.h];
     const after = norm(before + 1, t.p, t.h);
     S.hands[t.p][t.h] = after;
+    if(after === 0) knockOut(t.p, t.h);
     note(t.p, `ポイズンで1ダメージ → ${hn(t.h)}手が` + (after === 0 ? "アウト" : `${after}本`));
     msg += `<span class="sub">ポイズン：${NAMES[t.p]}の${hn(t.h)}手に1ダメージ`
          + `（${before} → ${after === 0 ? "アウト" : after + "本"}）</span>`;
@@ -5280,15 +5333,20 @@ function handMods(st){
 }
 
 /* 手の広さを変えるカード（拡張・縮小）は、その手がアウトにされると解ける。
-   自分の分配で0にしただけの手（parked）は解かない。縮小を分配で逃げられないようにするため。
+   アウトにされた（指が基準に達して落ちた）ときに knockOut で印を付け、ここで解く。
+   分配・反転・コピーで0になっただけの手は解かない。縮小を分配で逃げられないように、
+   反転しても拡張が本人に残るように、落ちた手に拡張しても無駄にならないようにするため。
    分配や召喚で戻ってきても、4本まで・5でアウトの普通の手に戻る。 */
+function knockOut(p, h){
+  if(!S.knocked) S.knocked = [[false,false],[false,false]];
+  S.knocked[p][h] = true;
+}
 function dropHandModsOnOut(){
   const lost = [];
   handMods(S);
   [0,1].forEach(p => [0,1].forEach(h => {
-    if(!S.parked) S.parked = [[false,false],[false,false]];
-    if(S.hands[p][h] !== 0){ S.parked[p][h] = false; return; }
-    if(S.parked[p][h]) return;          // 自分で分配して空けた手は、アウトにされたのとは違う
+    if(!S.knocked || !S.knocked[p][h]) return;   // アウトにされた手だけ。分配・反転・コピーで0になっただけの手は解かない
+    S.knocked[p][h] = false;
     const wasExp = S.expanded[p][h], wasShr = S.shrunk[p][h];
     if(!wasExp && !wasShr) return;
     S.expanded[p][h] = false;
