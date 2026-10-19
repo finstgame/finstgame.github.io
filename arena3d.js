@@ -226,7 +226,7 @@ export class FinstArena {
       const relic=new THREE.Group();root.add(relic);
       const crystals=[];
       for(let i=0;i<5;i++)crystals.push(this.makePiece(relic,p,i,'standard'));
-      const button=document.createElement('button');button.className='arena-hand';button.style.setProperty('--hand-color',`#${COLORS[p].toString(16)}`);
+      const button=document.createElement('button');button.className='arena-hand';button.dataset.p=p;button.dataset.h=h;button.style.setProperty('--hand-color',`#${COLORS[p].toString(16)}`);
       button.addEventListener('click',()=>this.onPick(p,h));this.labelHost.append(button);
       this.handNodes[p][h]={root,relic,crystals,aura,runes,button,skin:'standard',selected:false,target:false};
     }

@@ -1272,6 +1272,33 @@
   .join-row input::placeholder{color:#5A5A62;}
   .icon-btn{border-radius:50%;}
   .lobby button.ghost, .lobby-links > button{color:#E6E6EA;}
+
+  /* ---- チュートリアル ---- */
+  .tut{
+    position:fixed; left:50%; transform:translateX(-50%); z-index:58;
+    bottom:calc(12px + env(safe-area-inset-bottom));
+    width:calc(100% - 24px); max-width:460px; display:none;
+    background:linear-gradient(180deg,#1E1709,#141008); border:2px solid var(--wood); border-radius:16px;
+    padding:14px 16px 12px; box-shadow:0 12px 40px rgba(0,0,0,.7), 0 0 24px rgba(235,170,44,.18);
+  }
+  .tut.open{display:block; animation:slideIn .25s ease-out;}
+  .tut.top{bottom:auto; top:calc(10px + env(safe-area-inset-top));}
+  .tut.nudge{animation:tutNudge .4s ease;}
+  @keyframes tutNudge{0%,100%{transform:translateX(-50%)} 25%{transform:translateX(calc(-50% - 8px))} 75%{transform:translateX(calc(-50% + 8px))}}
+  .tut-count{font-size:11px; letter-spacing:.14em; color:var(--wood-ink); font-weight:700; margin-bottom:4px;}
+  .tut-text{font-size:14.5px; line-height:1.65;}
+  .tut-text b{color:var(--wood-ink);}
+  .tut-text .sub{display:block; color:#C8C8CE; font-size:12.5px; margin-top:4px;}
+  .tut-row{display:flex; gap:8px; justify-content:flex-end; margin-top:10px;}
+  .tut-row button{flex:0 0 auto; padding:9px 16px; font-size:13px;}
+  .tut-row .primary, .tut-row .primary:hover:not(:disabled){background:linear-gradient(180deg,#F4B740,#DC9A1E); color:#1A1206; border-color:#F0B23A;}
+  body.tut-on .app{padding-bottom:190px;}
+  body.tut-on #resetBtn{display:none;}
+  /* 光らせる場所：金の輪がふくらむ */
+  .tut-hl{position:relative; z-index:3; outline:3px solid var(--wood) !important; outline-offset:3px;
+    animation:tutPulse 1.1s ease-in-out infinite;}
+  @keyframes tutPulse{0%,100%{box-shadow:0 0 0 0 rgba(235,170,44,.55)} 50%{box-shadow:0 0 0 10px rgba(235,170,44,0)}}
+  .lobby .tut-entry{background:linear-gradient(180deg,#2A1F0A,#1A1306); border:2px solid var(--wood); color:var(--wood-ink); font-weight:900;}
 </style>
 <link rel="stylesheet" href="arena3d.css">
 </head>
@@ -1339,6 +1366,9 @@
     <button class="ghost" id="quitBtn" onclick="askQuit()">やめる</button>
   </div>
 </div>
+
+<!-- チュートリアルの案内 -->
+<div class="tut" id="tut" role="dialog" aria-live="polite"></div>
 
 <!-- カード使用時の演出 -->
 <div class="fx" id="fx" aria-hidden="true">
@@ -2246,6 +2276,7 @@ function showLobby(mode){
       自分の手で相手の手をタップして本数を押しつけ、<b>相手の両手をアウトにしたら勝ち</b>。
       1試合3〜5分。
     </div>
+    <button class="${tutDone() ? "ghost" : "tut-entry"}" style="width:100%" onclick="tutStart()">${tutDone() ? "チュートリアルをもう一度" : "はじめての人はチュートリアル（2分）"}</button>
     <div class="lobby-links">
       <button class="ghost" onclick="openInfo()">遊び方</button>
       <button class="ghost" onclick="openCards()">カード一覧</button>
@@ -2346,6 +2377,7 @@ function boot(){
   showLobby();
   /* ホーム画面のアイコンを長押しして「CPUと対戦」から来た場合 */
   if(new URLSearchParams(location.search).get("go") === "cpu"){ startCPU(); return; }
+  if(new URLSearchParams(location.search).get("go") === "tutorial"){ tutStart(); return; }
   if(code.length === 6){
     document.getElementById("codeInput").value = code;
     joinRoom(code);
@@ -2782,6 +2814,7 @@ function resign(){
 }
 
 function toLobby(){
+  tutStop();
   SFX.bgmStop();
   cpuStop();
   if(S) S.cpu = false;
@@ -2802,6 +2835,7 @@ const humanTap = (p,h) => { if(!S.cpu || (S.step ? S.step.who === 0 : actor() ==
 const iRespond = () => !online || (S.pending && S.pending.responder === seat);
 
 function restart(){
+  if(tut){ tutStart(); return; }
   if(!online && S && S.cpu){
     cpuStop();
     const st = newState(S.deck);
@@ -3496,6 +3530,7 @@ const bottomP = () => online ? seat : 0;
 
 function render(){
   window.finst3D?.sync();
+  if(tut) setTimeout(tutCheck, 0);
   if(S) handMods(S);
   document.documentElement.style.setProperty("--turn-c", col(S.turn));
   document.getElementById("cross").querySelectorAll("rect")
@@ -3662,6 +3697,7 @@ function usable(id, p){
 /* ================= 通常行動 ================= */
 function tap(p,h){
   if(busy || S.over) return;
+  if(tut && actor() === 0 && !tutAllow("tap", p, h)) return;
 
   /* カードの入力待ち中は、その入力として解釈する */
   if(S.step){
@@ -3820,6 +3856,7 @@ function closeSheet(){
    Phase 3 では deadline を Supabase 側に持たせ、ここは表示だけにする。 */
 function startTimer(){
   stopTimer();
+  if(tut) return;                       // チュートリアルでは時間切れにしない
   const stick = document.getElementById("timerStick");
   const secs = document.getElementById("sheetSecs");
   let lastSec = null;
@@ -3842,6 +3879,7 @@ function stopTimer(){ if(timerId){ clearInterval(timerId); timerId = null; } }
 
 function passDefense(timedOut){
   if(S.phase !== "defense") return;
+  if(tut && !tutAllow("respond", "pass")) return;
   /* 応答権があるのは防御側だけ。ただし相手の端末が落ちたときは攻撃側が締切+3秒で肩代わりする */
   if(online && !iRespond() && !timedOut) return;
   stopTimer();
@@ -3852,6 +3890,7 @@ function passDefense(timedOut){
 
 /* 防御カードで応答する */
 function respond(id){
+  if(tut && !tutAllow("respond", id)) return;
   if(S.phase !== "defense" || !iRespond()) return;
   const p = S.pending, r = p.responder;
   stopTimer();                                   // カードを切った時点で時間切れの対象外にする
@@ -4038,6 +4077,7 @@ async function poof(p, h, label, kind){
 /* ================= カード ================= */
 function pickCard(id){
   if(!humanTurn()) return;
+  if(tut && !tutAllow("pick", id)) return;
   if(busy || S.over || S.phase !== "normal" || S.step || !myTurn()) return;
   if(!S.cards[S.turn].includes(id)) return;
   if(!usable(id, S.turn).ok) return;
@@ -4069,6 +4109,7 @@ function closeCard(){
 /* 追加入力が要るカードはここで分岐する。
    カードの消費は「効果が確定した瞬間」に行うので、途中でやめても失われない。 */
 function useCard(id){
+  if(tut && actor() === 0 && !tutAllow("card", id)) return;
   if(busy || S.over || S.phase !== "normal") return;
   const me = S.turn;
   S.hit = null;
@@ -4720,7 +4761,159 @@ function cpuAttackPlans(){
   return out;
 }
 
+
+/* =========================================================
+   チュートリアル
+   CPUとの決まった流れの1試合で、操作を1つずつ覚える。
+   構える → 攻撃してアウトにする → 分配 → 防御カード → 能力カードで勝つ。
+   いまの段で求めている操作だけを通し、それ以外は案内を出して止める。
+   CPUの手もこちらで決める（cpuAct の代わりに tutCpu が指す）。
+   ========================================================= */
+let tut = null;          // {i: いまの段, entered: 段の準備をしたか, waiting: CPUの手を待っているか}
+let tutTimer = null;
+const TUT_DONE_KEY = "finst_tut_done";
+const tutDone = () => { try{ return localStorage.getItem(TUT_DONE_KEY) === "1"; }catch(e){ return false; } };
+
+const handSel = (p, h) => [`.hand[data-p="${p}"][data-h="${h}"]`, `.arena-hand[data-p="${p}"][data-h="${h}"]`];
+const TUT_STEPS = [
+  { text: `<b>フィンストへようこそ！</b>指の本数で戦うゲームです。<span class="sub">相手の手に自分の本数を押しつけて、<b>5以上</b>になった手はアウト。<b>相手の両手をアウトにしたら勝ち</b>です。</span>`,
+    next: "はじめる" },
+  { text: `まず<b>自分の左手（2本）</b>をタップして、かまえましょう。`,
+    hl: () => handSel(0, 0),
+    allow: (k, p, h) => k === "tap" && p === 0 && h === 0,
+    done: () => S.sel && S.sel[0] === 0 && S.sel[1] === 0 },
+  { text: `次に<b>相手の右手（3本）</b>をタップ。<span class="sub">2本が足されて 3 + 2 = 5。5以上なのでアウトになります。</span>`,
+    hl: () => handSel(1, 1),
+    allow: (k, p, h) => k === "tap" && ((p === 1 && h === 1) || p === 0),
+    done: () => S.hands[1][1] === 0 && S.turn === 1 },
+  { text: `<b>アウト！</b>相手の右手を落としました。<span class="sub">次は相手の番。相手もあなたの手に本数を押しつけてきます。</span>`,
+    cpu: () => ({atk: [0, 0, 1]}),          // 相手の左手(3) → あなたの右手(1) = 4
+    done: () => S.turn === 0 && !busy && S.hands[0][1] === 4 },
+  { text: `右手が4本になりました。あと1本でアウトなので、危ない形です。<span class="sub">攻撃のかわりに<b>分配</b>で、両手の指を分け直せます。<b>分配する</b>を押しましょう。</span>`,
+    hl: () => ["#splitBtn"],
+    allow: k => k === "split",
+    done: () => document.getElementById("split").classList.contains("open") },
+  { text: `<b>3 / 3</b> を選んで、両手を3本ずつにしましょう。<span class="sub">合計は変わりません。0の手をよみがえらせることもできます。</span>`,
+    hl: () => ["#opts .opt"],
+    allow: (k, a, b) => k === "split" || (k === "splitTo" && a === 3 && b === 3),
+    done: () => S.turn === 1 && S.hands[0][0] === 3 && S.hands[0][1] === 3 },
+  { text: `<b>防御カード「シールド」</b>を1枚渡しました。<span class="sub">相手に攻撃されたとき、受けるダメージを1にできます。相手が3本で攻めてきます。</span>`,
+    enter: () => { S.cards[0] = [2]; render(); },
+    next: "相手の番へ" },
+  { text: `攻撃されました！ <b>シールド</b>をタップして、ダメージを1にしましょう。<span class="sub">このままだと 3 + 3 = 6 でアウトです。</span>`,
+    cpu: () => ({atk: [0, 0, 0]}),          // 相手の左手(3) → あなたの左手(3)
+    hl: () => ['#sheetBody .card[data-def="2"]'],
+    allow: (k, id) => k === "respond" && id === 2,
+    done: () => S.turn === 0 && !busy && S.phase === "normal" && S.hands[0][0] === 4 },
+  { text: `守れました！ <b>能力カード「倍返指」</b>を渡しました。<span class="sub">手札のカードをタップして、<b>使う</b>を押しましょう。</span>`,
+    enter: () => { S.cards[0] = [6]; render(); },
+    hl: () => ['.board .card[data-id="6"]', "#cardUse"],
+    allow: (k, id) => (k === "pick" || k === "card") && id === 6,
+    done: () => S.step && S.step.id === 6 },
+  { text: `倍返指は<b>本数×2</b>でなぐります。<b>自分の左手（4本）</b>、つづけて<b>相手の左手</b>をタップ。<span class="sub">4×2 = 8ダメージ。相手の最後の手を落とせば勝ちです。</span>`,
+    hl: () => S.step && S.step.need === "enemyHand" ? handSel(1, 0) : handSel(0, 0),
+    allow: (k, p, h) => k === "tap" && ((p === 0 && h === 0) || (p === 1 && h === 0)) }   // 終わりは showWin → tutFinish
+];
+
+function tutStart(){
+  online = false; seat = 0; room = null;
+  cpuStop();
+  reset();
+  Object.assign(S, {cpu: true, mode: "quick", deck: "easy", turn: 0, counted: true,
+    hands: [[2,1],[3,3]], cards: [[],[]], dry: [false,false]});
+  NAMES[1] = "CPU";
+  tut = {i: 0, entered: false, waiting: false};
+  document.body.classList.add("tut-on");
+  enterGame();
+  render();
+  say(`<b>チュートリアル</b><span class="sub">案内にそって操作してください</span>`);
+  clearInterval(tutTimer);
+  tutTimer = setInterval(tutPaint, 200);
+  tutStep();
+}
+function tutStop(){
+  tut = null;
+  clearInterval(tutTimer); tutTimer = null;
+  document.body.classList.remove("tut-on");
+  document.getElementById("tut").classList.remove("open");
+  document.querySelectorAll(".tut-hl").forEach(el => el.classList.remove("tut-hl"));
+}
+/* いまの段を画面に出し、必要ならCPUに指させる */
+function tutStep(){
+  if(!tut) return;
+  const st = TUT_STEPS[tut.i];
+  if(!tut.entered){ tut.entered = true; if(st.enter) st.enter(); }
+  const box = document.getElementById("tut");
+  box.innerHTML = `<div class="tut-count">${tut.i + 1} / ${TUT_STEPS.length}</div>
+    <div class="tut-text">${st.text}</div>
+    <div class="tut-row">
+      <button class="ghost tut-skip" onclick="tutSkip()">スキップ</button>
+      ${st.next ? `<button class="primary tut-next" onclick="tutNext()">${st.next}</button>` : ""}
+    </div>`;
+  box.classList.add("open");
+  if(st.cpu && !tut.waiting){
+    tut.waiting = true;
+    S.turn = 1; render();
+    setTimeout(() => tutCpu(st.cpu()), 1100);
+  }
+  tutPaint();
+}
+function tutNext(){ if(!tut) return; tut.i++; tut.entered = false; tut.waiting = false; tutStep(); }
+function tutSkip(){
+  try{ localStorage.setItem(TUT_DONE_KEY, "1"); }catch(e){}
+  tutStop(); toLobby();
+}
+/* 段の終わりを確かめる。render のたびに呼ばれる */
+function tutCheck(){
+  if(!tut || S.over) return;
+  const st = TUT_STEPS[tut.i];
+  if(st.done && st.done()) setTimeout(() => { if(tut && TUT_STEPS[tut.i] === st) tutNext(); }, 350);
+}
+/* いまの段で求めている操作か。違えば止めて、案内をゆらす */
+function tutAllow(kind, a, b){
+  if(!tut) return true;
+  const st = TUT_STEPS[tut.i];
+  if(st.allow && st.allow(kind, a, b)) return true;
+  const box = document.getElementById("tut");
+  box.classList.remove("nudge"); void box.offsetWidth; box.classList.add("nudge");
+  return false;
+}
+/* 光らせる場所 */
+function tutPaint(){
+  if(!tut) return;
+  const st = TUT_STEPS[tut.i];
+  /* 防御の画面は下から出るので、そのあいだ案内は上へ逃がす */
+  document.getElementById("tut").classList.toggle("top", document.getElementById("sheet").classList.contains("open"));
+  const want = new Set();
+  (st.hl ? st.hl() : []).forEach(sel => document.querySelectorAll(sel).forEach(el => want.add(el)));
+  document.querySelectorAll(".tut-hl").forEach(el => { if(!want.has(el)) el.classList.remove("tut-hl"); });
+  want.forEach(el => el.classList.add("tut-hl"));
+}
+/* 決めておいたCPUの手 */
+function tutCpu(mv){
+  if(!tut || S.over) return;
+  busy = false; S.phase = "normal"; S.turn = 1;
+  const [mh, , oh] = mv.atk;
+  declareAttack({from: 1, fromHand: mh, to: 0, toHand: oh, damage: S.hands[1][mh], kind: "touch"});
+}
+/* 勝ったら、終わりの案内 */
+function tutFinish(){
+  try{ localStorage.setItem(TUT_DONE_KEY, "1"); }catch(e){}
+  const box = document.getElementById("tut");
+  box.innerHTML = `<div class="tut-text"><b>勝ち！ チュートリアル完了です。</b>
+      <span class="sub">本番では、カードは3枚ずつ配られ、相手も考えて指します。カードは全部で20種類。カード一覧でいつでも確かめられます。</span></div>
+    <div class="tut-row">
+      <button class="ghost" onclick="tutStop(); toLobby()">ロビーへ</button>
+      <button class="primary" onclick="tutStop(); startCPU()">CPUと対戦する</button>
+    </div>`;
+  box.classList.add("open");
+  document.querySelectorAll(".tut-hl").forEach(el => el.classList.remove("tut-hl"));
+  clearInterval(tutTimer); tutTimer = null;
+  SFX.win();
+}
+
 function cpuAct(){
+  if(tut) return;                       // チュートリアルの相手は tutCpu が指す
   if(!S.cpu || S.over || online || S.phase !== "normal" || actor() !== 1 || busy) return;
   /* CPUが人を操っている番。人の手を、人にとって一番まずい形に動かす */
   if(puppetOn() && S.turn === 0) return cpuPuppetMove();
@@ -5188,6 +5381,7 @@ function splitOptions(){
 
 function openSplit(){
   if(!humanTurn()) return;
+  if(tut && !tutAllow("split")) return;
   if(busy || S.over || S.phase !== "normal" || S.step || !myTurn()) return;
   S.sel = null;
   closeCard();
@@ -5208,6 +5402,7 @@ function openSplit(){
 function closeSplit(){ document.getElementById("split").classList.remove("open"); }
 
 function applySplit(a,b){
+  if(tut && S.turn === 0 && !tutAllow("splitTo", a, b)) return;
   S.hit = null;
   const from = S.hands[S.turn].join("/");
   note(S.turn, `分配 ${from} → ${a}/${b}`);
@@ -5289,6 +5484,7 @@ function endTurn(msg){
    札を使い切ったあとも読み合いが続き、同じ形をくり返すだけの試合になりにくい。
    どの札が来たかは本人にしか見せない（共有する文言には名前を出さない） */
 function dealIfEmpty(p){
+  if(tut) return "";                    // チュートリアルは渡すカードを決めてある
   if(S.cards[p].length || !(S.dry && S.dry[p])) return "";
   const pool = deckIds(S.deck || deckMode);
   const got = pool[Math.floor(Math.random() * pool.length)];
@@ -5470,6 +5666,7 @@ function countCpuWin(w){
 function showWin(){
   const w = S.winner;
   if(w === null || w === undefined) return;
+  if(tut){ cpuStop(); tutFinish(); return; }
   cpuStop();
   if(queued()) showQueueBar(queueFound ? "found" : "waiting");
   /* 決着したら、手番の呼び出しも切断の警告も引っ込める */

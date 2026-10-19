@@ -8,7 +8,7 @@ const inline=html.match(/<script>\s*([\s\S]*?)<\/script>/)[1].replace(/\nboot\(\
 function harness(){
  const elements=new Map();
  const el=()=>({classList:{add(){},remove(){},contains(){return false},toggle(){}},style:{setProperty(){}},dataset:{},innerHTML:'',textContent:'',tabIndex:0,offsetWidth:10,
-  querySelector(){return el()},querySelectorAll(){return []},appendChild(){},remove(){},setAttribute(){},addEventListener(){},scrollIntoView(){},getBoundingClientRect(){return {left:0,top:0,width:100,height:100}}});
+  querySelector(){return el()},querySelectorAll(){return []},appendChild(){},remove(){},setAttribute(){},removeAttribute(){},addEventListener(){},scrollIntoView(){},focus(){},getBoundingClientRect(){return {left:0,top:0,width:100,height:100}}});
  const doc={title:'Finst',hidden:false,documentElement:el(),body:el(),getElementById(id){if(!elements.has(id))elements.set(id,el());return elements.get(id)},querySelector:()=>el(),querySelectorAll:()=>[],createElement:()=>el(),addEventListener(){}};
  const cardEvents=[],hitEvents=[];
  const sandbox={document:doc,window:{matchMedia:()=>({matches:true}),addEventListener(){},finst3D:{enabled:true,sync(){},clear(){},card:(...a)=>cardEvents.push(a),hit:e=>hitEvents.push(e),settle:()=>Promise.resolve()}},navigator:{},localStorage:{getItem:()=>null,setItem(){}},location:{hash:'',search:''},URLSearchParams,console,Date,Math,Promise,crypto:{randomUUID:()=> 'test-client'},setTimeout:(fn,ms)=>{if(ms<1000)Promise.resolve().then(fn);return 1},clearTimeout(){},setInterval:()=>1,clearInterval(){}};
@@ -266,4 +266,24 @@ test('double: healing the first hit still lets the second hit come',async()=>{
  const t=harness();t.run('S.hands=[[2,3],[1,1]];S.cards=[[],[9]];S.turn=0;S.doubleQueue=[{by:0,mine:1,theirs:1}];S.phase="defense";S.pending={from:0,fromHand:0,to:1,toHand:0,responder:1,damage:2,kind:"double",modifiers:[]};respond(9);stepGotHand(1,0);');
  await t.drain();await t.drain();
  const s=t.state();assert.equal(s.hands[1][0],3,'the first hit is healed');assert.equal(s.hands[1][1],4,'the second hit (3) still lands on the right hand: 1 + 3 = 4');
+});
+test('tutorial: blocks off-script moves, walks through attack, split, shield and card, and ends in a win',async()=>{
+ const t=harness();
+ t.run('globalThis.__s=new Map();localStorage.getItem=k=>globalThis.__s.get(k)??null;localStorage.setItem=(k,v)=>globalThis.__s.set(k,String(v));tutCheck=()=>{};CPU_DELAY.beat=0;CPU_DELAY.think=0;CPU_DELAY.step=0;tutStart();');
+ const go=async js=>{t.run(js);await t.drain();await t.drain();};
+ await go('tutNext()');                                   // 1 → 構える
+ await go('tap(0,1)');assert.equal(t.run('S.sel'),null,'the wrong hand is blocked');
+ await go('tap(0,0)');await go('tutNext()');
+ await go('tap(1,1)');assert.equal(t.run('S.hands[1][1]'),0,'3 + 2 knocks out the right hand');
+ await go('tutNext();tutCpu({atk:[0,0,1]})');assert.equal(t.run('S.hands[0][1]'),4);
+ await go('tutNext();applySplit(4,2)');assert.equal(t.run('S.hands[0][0]'),2,'a different split is blocked');
+ await go('tutNext();applySplit(3,3)');assert.equal(t.run('JSON.stringify(S.hands[0])'),'[3,3]');
+ await go('tutNext();tutNext();tutCpu({atk:[0,0,0]})');assert.equal(t.run('S.phase'),'defense');
+ await go('passDefense(false)');assert.equal(t.run('S.phase'),'defense','passing is blocked');
+ await go('respond(2)');assert.equal(t.run('S.hands[0][0]'),4,'the shield turns 3 damage into 1');
+ await go('tutNext();useCard(6);tutNext();tap(0,0);tap(1,0)');
+ assert.equal(t.run('S.over'),true);assert.equal(t.run('S.winner'),0);
+ assert.equal(t.run('cpuWins()'),0,'the tutorial win is not counted for skins');
+ t.run('tutFinish()');   // この試験の道具では showWin を空にしているので、勝ったあとの案内は直接呼ぶ
+ assert.equal(t.run('localStorage.getItem("finst_tut_done")'),'1');
 });
