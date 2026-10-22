@@ -2,7 +2,7 @@
 <html lang="ja">
 <head>
 <meta charset="utf-8">
-<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no, viewport-fit=cover">
 <title>フィンスト</title>
 <meta name="description" content="相手の両手をアウトにしたら勝ち。リンクを開くだけで遊べる2人対戦のブラウザゲームです。">
 <meta name="theme-color" content="#0A0A0B">
@@ -63,6 +63,12 @@
   }
 
   *{box-sizing:border-box; margin:0; padding:0; -webkit-tap-highlight-color:transparent;}
+  /* 連打で画面が拡大されないようにする。touch-action は子に引き継がれないので、全部の要素に付ける。
+     manipulation は「スクロールはできる、ダブルタップの拡大はしない」という指定 */
+  html, body, *{touch-action:manipulation;}
+  /* 長押しで文字が選択されたり、拡大鏡やメニューが出たりしないようにする（入力欄は除く） */
+  body{-webkit-user-select:none; user-select:none; -webkit-touch-callout:none;}
+  input, textarea{-webkit-user-select:text; user-select:text;}
 
   /* 横には動かさない。盤面は画面に収まる前提なので、左右のスクロールも
      つまんで拡大した後の横ずれも要らない。clip は hidden と違って
@@ -83,7 +89,7 @@
        この指定を打ち消していて効いていなかった）。 */
     padding:calc(10px + env(safe-area-inset-top)) 12px calc(12px + env(safe-area-inset-bottom));
     overflow-x:clip;
-    touch-action:pan-y;              /* 指では縦にしか動かせないようにする */
+    touch-action:manipulation;       /* 連打してもダブルタップで拡大しない（横に動かないのは overflow-x:clip が担う） */
     overscroll-behavior-x:none;
   }
 
@@ -2360,6 +2366,9 @@ function leaveRoom(){
   showLobby();
 }
 
+/* iPhoneのSafariは user-scalable=no を無視するので、2本指でつまむ拡大も止める */
+["gesturestart", "gesturechange", "gestureend"].forEach(t =>
+  document.addEventListener(t, e => e.preventDefault(), {passive: false}));
 function boot(){
   myId = clientId();
   initFeedback();
